@@ -1,0 +1,46 @@
+[project]
+name = "smdt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "black[jupyter]>=25.9.0",
+    "colorama>=0.4.6",
+    "dotenv>=0.9.9",
+    "ijson>=3.4.0.post0",
+    "json-repair>=0.52.1",
+    "openai>=2.6.0",
+    "orjson>=3.11.3",
+    "pandas>=2.3.3",
+    "psycopg[binary]>=3.2.10",
+    "pytest>=8.4.2",
+    "tqdm>=4.67.1",
+    "urlextract>=1.9.0",
+    "zstandard>=0.25.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[project.entry-points."smdt.readers"]
+json = "smdt.io.readers.json:JsonReader"
+jsonl = "smdt.io.readers.jsonl:JsonlReader"
+csv_pd = "smdt.io.readers.csv_pd:PandasCsvReader"
+zip = "smdt.io.readers.zip:ZipReader"
+tar = "smdt.io.readers.tar:TarReader"
+
+
+[project.optional-dependencies]
+# global set of enrichers
+enrichers = []
+
+# per-enricher groups
+langdetect = ["langdetect>=1.0.9"]
+textgen = ["openai>=2.6.0"]
+detoxify_toxicity = ["torch", "transformers"]
