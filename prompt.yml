@@ -1,0 +1,20 @@
+default: summarize_en
+prompts:
+  summarize_en:
+    system: "You are a concise assistant."
+    user: "Summarize the following post in one sentence:\n\n{body}"
+    defaults: {}
+
+  summarize_tr:
+    system: "Kısa ve öz bir asistansın."
+    user: "Aşağıdaki gönderiyi tek cümlede özetle:\n\n{body}"
+    defaults: {}
+
+  toxicity_label:
+    system: "You label toxicity strictly as TOXIC or NON_TOXIC."
+    user: |
+      Text:
+      {body}
+
+      Respond with exactly one token: TOXIC or NON_TOXIC.
+    defaults: {}
