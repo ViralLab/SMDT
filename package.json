@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "scripts": {
+    "docs:api": "uvx pydoc-markdown && node scripts/split-api.mjs",
+    "docs:dev": "npm run docs:api && vitepress dev site",
+    "docs:build": "npm run docs:api && vitepress build site"
+  },
+  "devDependencies": {
+    "vitepress": "^1.3.0"
+  }
+}

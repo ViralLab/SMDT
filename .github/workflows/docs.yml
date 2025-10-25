@@ -1,0 +1,57 @@
+name: Build & Deploy Docs
+
+on:
+  push:
+    branches: [main]
+    # Only run when docs are affected (optional)
+    # paths:
+    #   - 'src/**/*.py'
+    #   - 'site/**'
+    #   - 'pydoc-markdown.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed for gh-pages push
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pydoc-markdown
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydoc-markdown
+
+      - name: Generate API Markdown from docstrings
+        run: |
+          pydoc-markdown
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install deps & build VitePress
+        working-directory: site
+        run: |
+          npm ci || npm i
+          npx vitepress build
+
+      - name: Deploy to GitHub Pages (gh-pages)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site/.vitepress/dist
+          # If you use a custom domain, add:
+          # cname: docs.example.com

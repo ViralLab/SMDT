@@ -8,3 +8,16 @@ wheels/
 
 # Virtual environments
 .venv
+
+
+# Node
+node_modules/
+
+  
+# Generated docs
+site/api/**/*.md
+!site/api/README.md
+site/api/.generated-files.txt
+site/api/mkdocs.yml
+site/.vitepress/apiSidebar.mjs
+site/.vitepress/cache

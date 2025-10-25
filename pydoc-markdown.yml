@@ -1,0 +1,15 @@
+loaders:
+  - type: python
+    search_path: ['src'] # <- adjust if needed
+    packages: ['smdt'] # <- your actual package name
+
+processors:
+  - type: filter
+    skip_empty_modules: true
+  - type: smart
+  - type: google # or 'numpy'
+
+renderer:
+  type: markdown
+  filename: 'site/api/index.md' # single-file output for VitePress
+  render_toc: false
