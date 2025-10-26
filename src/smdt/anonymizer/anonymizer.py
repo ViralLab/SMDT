@@ -29,7 +29,6 @@ class AnonymizeConfig:
     pepper: bytes
     algorithm: Algorithm = Algorithm.SHA256
     output_hex_len: int = 64
-    replace_numbers: bool = False
     # Where to find the anon schema inside the package. Users don't pass file paths.
     schema_package: str = "smdt.store.schemas"
     schema_resource: str = "anon_std_schema.sql"
@@ -61,7 +60,6 @@ class Anonymizer:
         self.redactor = Redactor(
             handle_mapper=lambda h: self.pseudo.make(h) or "",
             map_host=domain_mapper,
-            replace_numbers=cfg.replace_numbers,
         )
 
     def prepare_destination(self) -> None:

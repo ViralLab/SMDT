@@ -18,7 +18,6 @@ except Exception:  # pragma: no cover
 class Redactor:
     handle_mapper: Callable[[str], str]
     map_host: Optional[Callable[[str], str]] = None
-    replace_numbers: bool = False
 
     def __post_init__(self):
         L = "\\p{L}" if _UNICODE else "A-Za-z"
