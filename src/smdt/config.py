@@ -22,3 +22,16 @@ class DBConfig:
     application_name: str = os.getenv("APP_NAME", "standarddb")
     connect_timeout: int = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
     standard_schema_path: str = STANDARD_SCHEMA_SQL_PATH
+
+
+@dataclass
+class AnonymizationVariables:
+    @property
+    def pepper(self) -> bytes:
+        val: str = os.getenv("PEPPER")
+        if not val:
+            raise RuntimeError(
+                "PEPPER environment variable is required for anonymization"
+            )
+
+        return val.encode("utf-8")
