@@ -58,6 +58,9 @@ class JsonlReader(Reader):
                 if not line:
                     continue
                 yield json_repair.loads(line)
+        except Exception as e:
+            print(f"Error reading JSONL from {uri}: {e}")
+            pass
         finally:
             try:
                 text_stream.close()
