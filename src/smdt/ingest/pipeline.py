@@ -1,4 +1,3 @@
-# smdt/ingest/pipeline.py
 from __future__ import annotations
 
 import logging
@@ -31,7 +30,6 @@ from smdt.store.models import (
     Accounts,
     Actions,
     Entities,
-    HashMap,
     PostEnrichments,
     Posts,
 )
@@ -57,7 +55,6 @@ UNIQUE_KEYS: Dict[Type, Tuple[str, ...]] = {
     ),
     PostEnrichments: ("post_id", "model_id"),
     AccountEnrichments: ("account_id", "model_id"),
-    HashMap: ("hash_key",),
 }
 
 COMPRESSED_SUFFIXES = {".gz", ".bz2", ".xz", ".zst"}
@@ -216,7 +213,7 @@ def run_pipeline(
 
     # ------------------------------- main loop -------------------------------
 
-    for fp in plan.files:
+    for fp in tqdm.tqdm(plan.files, desc="Pipeline files", colour="red"):
         t0_file = perf_counter()
         _notify("file_start", path=fp.path)
         log.info("Processing file %s", fp.path)
