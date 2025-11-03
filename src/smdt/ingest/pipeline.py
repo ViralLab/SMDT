@@ -18,13 +18,14 @@ from typing import (
     Type,
 )
 
+
 import tqdm
 
 from smdt.io.readers import read
 from smdt.io.archive_stream import stream_archive_records
-from smdt.ingest.plan import Plan
 from smdt.ingest.dedup import dedup_best
-from smdt.standardizers.base import Standardizer, SourceInfo
+from smdt.ingest.plan import Plan
+from smdt.standardizers.base import SourceInfo, Standardizer
 from smdt.store.models import (
     AccountEnrichments,
     Accounts,
@@ -66,12 +67,13 @@ DEFAULT_READER_KW: Dict[str, Dict[str, Any]] = {
 
 @dataclass
 class PipelineConfig:
-    batch_size: int = 2000
-    chunk_size: int = 5000
+    """Configuration toggles for the pipeline."""
+
+    batch_size: int = 1_000  # records → standardizer batch size
+    chunk_size: int = 100_000  # values fallback chunk size for DB
     reader_kwargs: Dict[str, Dict[str, Any]] | None = None
     on_conflict: Dict[Type, str] | None = None
     progress: ProgressCallback | None = None
-    flush_per_file: bool = True
 
 
 def run_pipeline(
@@ -82,12 +84,16 @@ def run_pipeline(
     config: PipelineConfig | None = None,
     hints: Dict[str, Any] | None = None,
 ) -> None:
+    """
+    Run the pipeline over files in `plan`, standardize records via `standardizer`,
+    and insert models into `db` with fallbacks and on-conflict policies.
+    """
     cfg = config or PipelineConfig()
     on_conflict = dict(cfg.on_conflict or {})
 
     buffers: DefaultDict[Type, List[DBModel]] = defaultdict(list)
-    counters = Counter()
-    failures_by_class = Counter()
+    counters: Counter[str] = Counter()
+    failures_by_class: Counter[str] = Counter()
     t0_all = perf_counter()
 
     # ---------------- helpers ----------------
@@ -114,22 +120,14 @@ def run_pipeline(
                 merged.update(cfg.reader_kwargs[ext])
         return merged
 
-    def _preview_model(model: Any, max_len: int = 300) -> str:
-        try:
-            cols = getattr(model, "insert_columns")(False)
-            vals = getattr(model, "insert_values")(False)
-            parts = []
-            for c, v in zip(cols, vals):
-                s = repr(v)
-                if len(s) > 80:
-                    s = s[:77] + "..."
-                parts.append(f"{c}={s}")
-            preview = ", ".join(parts)
-            return (
-                preview if len(preview) <= max_len else (preview[: max_len - 3] + "...")
-            )
-        except Exception as e:
-            return f"<unpreviewable payload: {e!r}>"
+    def _add_models_to_buffers(models: Iterable[DBModel]) -> None:
+        """Accumulate models to per-class buffers and bump counters."""
+        nonlocal counters, file_models
+        for model in models:
+            cls = type(model)
+            buffers[cls].append(model)
+            file_models += 1
+            counters[f"models_{cls.__name__}"] += 1
 
     def _flush_buffer(model_cls: Type, items: List[DBModel]) -> None:
         """Flush a single model buffer using COPY→multi-values→row-by-row strategy."""
@@ -157,7 +155,7 @@ def run_pipeline(
                 items,
                 include_id=False,
                 on_conflict=on_conflict.get(model_cls),
-                chunk_size=cfg.chunk_size,  # used by multi-values fallback
+                chunk_size=cfg.chunk_size,
             )
             elapsed = perf_counter() - t0
             _notify(
@@ -166,9 +164,9 @@ def run_pipeline(
             log.info(
                 "Flushed %d %s rows in %.2fs", len(items), model_cls.__name__, elapsed
             )
-
         except Exception as e:
-            # If insert_with_fallbacks bubbled up, treat as a hard failure for this batch.
+            counters["failed_models"] += len(items)
+            failures_by_class[model_cls.__name__] += len(items)
             _notify(
                 "flush_error",
                 model=model_cls.__name__,
@@ -194,7 +192,7 @@ def run_pipeline(
 
     # ---------------- record iteration (files & archives) ----------------
 
-    def _iter_file_records(fp) -> Iterable[Tuple[Mapping[str, Any], SourceInfo]]:
+    def _iter_file_records(fp):
         if not fp.is_archive:
             src = SourceInfo(path=fp.path, member=None, hints=hints)
             rk = _reader_kwargs_for(fp.path, fp.reader_name)
@@ -213,92 +211,103 @@ def run_pipeline(
 
     # ------------------------------- main loop -------------------------------
 
-    for fp in tqdm.tqdm(plan.files, desc="Pipeline files", colour="red"):
-        t0_file = perf_counter()
-        _notify("file_start", path=fp.path)
-        log.info("Processing file %s", fp.path)
+    try:
+        for fp in tqdm.tqdm(plan.files, desc="Pipeline files", colour="red"):
+            t0_file = perf_counter()
+            _notify("file_start", path=fp.path)
+            log.info("Processing file %s", fp.path)
 
-        file_records = 0
-        file_models = 0
-        prev_record_errors = counters.get("record_errors", 0)
-        prev_row_failures = counters.get("row_failures", 0)
+            file_records = 0
+            file_models = 0
+            prev_record_errors = counters.get("record_errors", 0)
+            prev_row_failures = counters.get("row_failures", 0)
 
-        rec_iter = _iter_file_records(fp)
-        pbar = tqdm.tqdm(rec_iter)
+            rec_iter: Iterable[Tuple[Any, SourceInfo]] = _iter_file_records(fp)
 
-        for rec, src in pbar:
-            file_records += 1
             try:
-                for model in standardizer.standardize(rec, src):
-                    cls = type(model)
-                    buffers[cls].append(model)
-                    file_models += 1
-                    counters[f"models_{cls.__name__}"] += 1
-                    if len(buffers[cls]) >= cfg.batch_size:
-                        _flush_buffer(cls, buffers[cls])
+                for record, src in tqdm.tqdm(
+                    rec_iter,
+                    desc="standardize(sequential)",
+                    leave=False,
+                    colour="blue",
+                ):
+                    try:
+                        sub_result = standardizer.standardize((record, src))
+                        _add_models_to_buffers(sub_result)
+
+                        # Flush overgrown class buffers
+                        for cls in list(buffers.keys()):
+                            if len(buffers[cls]) >= cfg.batch_size:
+                                _flush_buffer(cls, buffers[cls])
+                    except Exception as e:
+                        counters["record_errors"] += 1
+                        log.warning(
+                            "Error in sequential standardize: %s", e, exc_info=True
+                        )
+                    file_records += 1
+
+                # per-file counters aggregation (common to both branches)
+                counters["files"] += 1
+                counters["records"] += file_records
+                counters["models"] += file_models
+
             except Exception as e:
+                # Catch any unhandled per-file error so we still emit file_end
                 counters["record_errors"] += 1
-                log.warning(
-                    "Error standardizing record in %s%s: %s",
-                    src.path,
-                    f"::{src.member}" if src.member else "",
-                    e,
-                    exc_info=True,
+                log.error(
+                    "Unhandled error while processing %s: %s", fp.path, e, exc_info=True
                 )
-            pbar.set_postfix(
-                {"Buffer sizes": {k.__name__: len(v) for k, v in buffers.items()}}
-            )
 
-        counters["files"] += 1
-        counters["records"] += file_records
-        counters["models"] += file_models
+            finally:
+                # Always emit file_end and optional per-file flush
+                file_record_errors = (
+                    counters.get("record_errors", 0) - prev_record_errors
+                )
+                file_row_failures = counters.get("row_failures", 0) - prev_row_failures
 
-        file_record_errors = counters.get("record_errors", 0) - prev_record_errors
-        file_row_failures = counters.get("row_failures", 0) - prev_row_failures
+                _notify(
+                    "file_end",
+                    path=fp.path,
+                    records=file_records,
+                    models=file_models,
+                    record_errors=file_record_errors,
+                    row_failures=file_row_failures,
+                    elapsed=perf_counter() - t0_file,
+                )
+                log.info(
+                    "Finished %s with %d records, %d models (record_errors=%d, row_failures=%d)",
+                    fp.path,
+                    file_records,
+                    file_models,
+                    file_record_errors,
+                    file_row_failures,
+                )
 
+        # end for each file
+
+    finally:
+        # Final flush and summary (now truly for the whole run)
+        _flush_all_buffers()
         _notify(
-            "file_end",
-            path=fp.path,
-            records=file_records,
-            models=file_models,
-            record_errors=file_record_errors,
-            row_failures=file_row_failures,
-            elapsed=perf_counter() - t0_file,
+            "done",
+            files=counters["files"],
+            records=counters["records"],
+            models=counters["models"],
+            record_errors=counters.get("record_errors", 0),
+            row_failures=counters.get("row_failures", 0),
+            failed_models_total=counters.get("failed_models", 0),
+            failed_models_by_class=dict(failures_by_class),
+            elapsed=perf_counter() - t0_all,
         )
         log.info(
-            "Finished %s with %d records, %d models (record_errors=%d, row_failures=%d)",
-            fp.path,
-            file_records,
-            file_models,
-            file_record_errors,
-            file_row_failures,
+            "Pipeline finished: %d files, %d records, %d models in %.2fs "
+            "(record_errors=%d, row_failures=%d, failed_models_total=%d, failed_by_class=%s)",
+            counters["files"],
+            counters["records"],
+            counters["models"],
+            perf_counter() - t0_all,
+            counters.get("record_errors", 0),
+            counters.get("row_failures", 0),
+            counters.get("failed_models", 0),
+            dict(failures_by_class),
         )
-
-        if cfg.flush_per_file:
-            _flush_all_buffers()
-
-    # Final flush and summary
-    _flush_all_buffers()
-    _notify(
-        "done",
-        files=counters["files"],
-        records=counters["records"],
-        models=counters["models"],
-        record_errors=counters.get("record_errors", 0),
-        row_failures=counters.get("row_failures", 0),
-        failed_models_total=counters.get("failed_models", 0),
-        failed_models_by_class=dict(failures_by_class),
-        elapsed=perf_counter() - t0_all,
-    )
-    log.info(
-        "Pipeline finished: %d files, %d records, %d models in %.2fs "
-        "(record_errors=%d, row_failures=%d, failed_models_total=%d, failed_by_class=%s)",
-        counters["files"],
-        counters["records"],
-        counters["models"],
-        perf_counter() - t0_all,
-        counters.get("record_errors", 0),
-        counters.get("row_failures", 0),
-        counters.get("failed_models", 0),
-        dict(failures_by_class),
-    )
