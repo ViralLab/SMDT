@@ -1,59 +1,61 @@
+# smdt/io/readers/zip.py
 from __future__ import annotations
+
 import zipfile
-from typing import Iterable, Optional, Any, Mapping, Callable
-from pathlib import Path
+from fnmatch import fnmatch
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from .base import Reader
-from .registry import get_reader
+from .registry import read_from_filelike
 
 
 class ZipReader(Reader):
-    """
-    Generic ZIP reader that delegates each member file to an appropriate reader.
-    - Iterates over members in the archive.
-    - For each member, finds a registered reader (by extension/content_type).
-    - Streams records yielded by that reader.
-    """
-
     name = "zip"
 
     def __init__(
-        self,
-        member_filter: Optional[Callable[[str], bool]] = None,
-    ):
+        self, *, member_filter: Optional[Callable[[str], bool]] = None
+    ) -> None:
         self.member_filter = member_filter
 
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
-        return uri.lower().endswith(".zip")
+        u = uri.lower()
+        return u.endswith((".zip",))
 
-    def stream(self, uri: str, **kwargs) -> Iterable[Mapping[str, Any]]:
-        with zipfile.ZipFile(uri, "r") as zf:
+    def stream(self, uri: str, **kwargs: Any) -> Iterable[Mapping[str, Any]]:
+        include = tuple(kwargs.get("include", ())) or None
+        exclude = tuple(kwargs.get("exclude", ())) or None
+        member_filter = kwargs.get("member_filter", self.member_filter)
+
+        # Don't leak archive-only kwargs to child readers
+        child_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("member_filter", "include", "exclude")
+        }
+
+        def want(name: str) -> bool:
+            if member_filter and not member_filter(name):
+                return False
+            if include and not any(fnmatch(name, pat) for pat in include):
+                return False
+            if exclude and any(fnmatch(name, pat) for pat in exclude):
+                return False
+            return True
+
+        with zipfile.ZipFile(uri) as zf:
             for info in zf.infolist():
-                member_name = info.filename
-                if self.member_filter and not self.member_filter(member_name):
+                if info.is_dir():
                     continue
-                # Skip directories
-                if member_name.endswith("/"):
-                    continue
-
-                # delegate based on member extension
-                reader = get_reader(member_name)
-                if not reader:
-                    # no reader for this member → skip or warn
+                mname = info.filename
+                if not want(mname):
                     continue
 
-                with zf.open(info, "r") as raw:
-                    # Some readers expect a path, others accept file-like
-                    if hasattr(reader, "stream_from_filelike"):
-                        yield from reader.stream_from_filelike(
-                            raw, name=member_name, **kwargs
-                        )
-                    else:
-                        # fallback: write to temp file if needed (not ideal for big zips)
-                        # or extend your Reader base to support filelike by default
-                        raise RuntimeError(
-                            f"Reader {reader.name} does not support file-like input (member={member_name})"
-                        )
+                # Single handoff point (reader selection + filelike vs tempfile fallback).
+                # Ensures nested compression (e.g., *.csv.gz inside .zip) is handled via member_name.
+                with zf.open(info, "r") as fobj:
+                    yield from read_from_filelike(
+                        fobj, member_name=mname, **child_kwargs
+                    )
 
 
 from . import registry

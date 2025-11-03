@@ -4,122 +4,109 @@ import json_repair
 from typing import Iterable, Mapping, Any, Optional, BinaryIO
 
 from .base import Reader, MissingOptionalDependency
-from .utils import open_local_binary, maybe_decompress, file_ext
+from .utils import open_for_reading, maybe_decompress, file_ext
 
 
 class JsonReader(Reader):
     """
-    Reader for plain JSON files.
+    Reader for JSON and JSON(.gz/.bz2/.xz/.zst) files.
 
     Modes:
-      - Default (stream_array=False): load the full JSON doc with json.load().
-          • If top-level is an array -> yield each element
-          • If top-level is an object -> yield that object once
-      - Streaming arrays (stream_array=True): use ijson to stream each element
-          • Memory-safe for huge top-level arrays
-          • Requires the optional 'ijson' dependency
+      - Default: load full JSON doc via json_repair.load()
+          • If top-level is a list → yield each element
+          • If top-level is a dict → yield once
+      - stream_array=True: memory-safe streaming of large top-level arrays via ijson
 
-    Compression:
-      - Transparent .gz / .bz2 / .xz / .zst via maybe_decompress()
+    Compression: handled transparently via open_for_reading() and maybe_decompress()
     """
 
     name = "json"
 
+    # -------------------- detection --------------------
+
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
         ext = file_ext(uri)
-        return (
-            ext.endswith(".json")
-            or ext.endswith(".json.gz")
-            or ext.endswith(".json.bz2")
-            or ext.endswith(".json.xz")
-            or ext.endswith(".json.zst")
-        )
+        return ext.endswith((".json", ".json.gz", ".json.bz2", ".json.xz", ".json.zst"))
 
-    # ---------- path-based ----------
+    # -------------------- path-based --------------------
 
     def stream(self, uri: str, **kwargs) -> Iterable[Mapping[str, Any]]:
         """
         Kwargs:
           - stream_array: bool = False
-              If True, stream a top-level array using ijson (memory-safe).
-          - ijson_prefix: str = 'item'
-              The prefix used with ijson.items() when streaming arrays.
-          - (any other kwargs are ignored here)
+              If True, stream a top-level array using ijson.
+          - ijson_prefix: str = "item"
+              Prefix passed to ijson.items() when streaming arrays.
         """
         stream_array: bool = kwargs.pop("stream_array", False)
         ijson_prefix: str = kwargs.pop("ijson_prefix", "item")
 
-        f = open_local_binary(uri)
-        wrapped = maybe_decompress(f, uri)
+        f = open_for_reading(uri)  # handles compression
         try:
             if stream_array:
-                yield from self._stream_array_with_ijson(wrapped, ijson_prefix)
+                yield from self._stream_array_with_ijson(f, ijson_prefix)
             else:
-                yield from self._load_entire_doc(wrapped)
+                yield from self._load_entire_doc(f)
         finally:
             try:
-                wrapped.close()
-            finally:
                 f.close()
+            except Exception:
+                pass
 
-    # ---------- file-like ----------
+    # -------------------- file-like --------------------
 
     def stream_from_filelike(
         self, f: BinaryIO, **kwargs
     ) -> Iterable[Mapping[str, Any]]:
         """
-        Handle already-opened binary file-like (e.g. zip/tar member).
-        Respects the same kwargs as .stream().
+        Handle already-opened binary file-like (e.g., from .tar or .zip).
+        Automatically decompresses based on member_name if needed.
         """
         stream_array: bool = kwargs.pop("stream_array", False)
         ijson_prefix: str = kwargs.pop("ijson_prefix", "item")
+        member_name: Optional[str] = kwargs.pop("member_name", kwargs.pop("name", None))
+
+        # Decompress again if this member itself is compressed (tar → foo.json.gz)
+        f_dec = maybe_decompress(f, member_name) if member_name else f
 
         if stream_array:
-            # file-like is already the decompressed member; stream via ijson
-            yield from self._stream_array_with_ijson(f, ijson_prefix)
+            yield from self._stream_array_with_ijson(f_dec, ijson_prefix)
         else:
-            # full-load path: wrap as text and json.load
-            yield from self._load_entire_doc(f)
+            yield from self._load_entire_doc(f_dec)
 
-    # ---------- internals ----------
+    # -------------------- internals --------------------
 
     def _load_entire_doc(self, bin_f: BinaryIO) -> Iterable[Mapping[str, Any]]:
         """
-        Load full JSON document and yield:
-          - each item if it's a top-level list
-          - the object itself if it's a dict
+        Load full JSON document (via json_repair) and yield:
+          - each item if top-level list
+          - the object itself if dict
         """
         text_stream = io.TextIOWrapper(bin_f, encoding="utf-8")
         data = json_repair.load(text_stream)
+
         if isinstance(data, list):
             for obj in data:
                 yield obj
         elif isinstance(data, dict):
             yield data
         else:
-            raise ValueError(f"Unsupported JSON top-level type: {type(data)}")
+            raise ValueError(f"Unsupported top-level JSON type: {type(data)}")
 
     def _stream_array_with_ijson(
         self, bin_f: BinaryIO, prefix: str
     ) -> Iterable[Mapping[str, Any]]:
         """
-        Stream a top-level array using ijson.items(file_like, prefix).
-        Raises MissingOptionalDependency if ijson isn't installed.
-
-        Note:
-          This expects the JSON root to be an array; if the file is an object,
-          ijson will yield nothing. If you need auto-detection, avoid ijson and
-          use _load_entire_doc() instead (but that loads the whole doc).
+        Stream large top-level arrays safely using ijson.items().
         """
         try:
-            import ijson  # optional dependency
+            import ijson
         except Exception as e:
             raise MissingOptionalDependency(
                 "Streaming large JSON arrays requires 'ijson'. "
-                "Install: pip install 'smdt[ijson]'"
+                "Install with: pip install 'smdt[ijson]'"
             ) from e
 
-        # Wrap as text for ijson to handle encoding properly
         text_stream = io.TextIOWrapper(bin_f, encoding="utf-8")
         for obj in ijson.items(text_stream, prefix):
             yield obj

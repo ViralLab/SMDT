@@ -1,28 +1,28 @@
-# src/smdt/io/readers/tar.py
 from __future__ import annotations
-import tarfile, tempfile, shutil
-from pathlib import Path
-from typing import Optional, Callable, Iterable, Mapping, Any
+import tarfile
 from fnmatch import fnmatch
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from .base import Reader
-from .registry import get_reader
+from .registry import read_from_filelike
 
 
 class TarReader(Reader):
     name = "tar"
 
-    def __init__(self, *, member_filter: Optional[Callable[[str], bool]] = None):
+    def __init__(
+        self, *, member_filter: Optional[Callable[[str], bool]] = None
+    ) -> None:
         self.member_filter = member_filter
 
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
         u = uri.lower()
         return u.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"))
 
-    def stream(self, uri: str, **kwargs) -> Iterable[Mapping[str, Any]]:
-        member_filter = kwargs.get("member_filter", self.member_filter)
+    def stream(self, uri: str, **kwargs: Any) -> Iterable[Mapping[str, Any]]:
         include = tuple(kwargs.get("include", ())) or None
         exclude = tuple(kwargs.get("exclude", ())) or None
+        member_filter = kwargs.get("member_filter", self.member_filter)
 
         # Don’t leak archive-only kwargs to child readers
         child_kwargs = {
@@ -32,15 +32,14 @@ class TarReader(Reader):
         }
 
         def want(name: str) -> bool:
-            if member_filter:
-                return member_filter(name)
-            ok_inc = True if not include else any(fnmatch(name, pat) for pat in include)
-            ok_exc = (
-                True if not exclude else not any(fnmatch(name, pat) for pat in exclude)
-            )
-            return ok_inc and ok_exc
+            if member_filter and not member_filter(name):
+                return False
+            if include and not any(fnmatch(name, pat) for pat in include):
+                return False
+            if exclude and any(fnmatch(name, pat) for pat in exclude):
+                return False
+            return True
 
-        # Lazy iteration over members (avoid getmembers())
         with tarfile.open(uri, "r:*") as tf:
             for member in tf:
                 if not member.isfile():
@@ -49,35 +48,16 @@ class TarReader(Reader):
                 if not want(mname):
                     continue
 
-                reader = get_reader(mname)
-                if not reader:
-                    continue
-
                 fobj = tf.extractfile(member)
                 if fobj is None:
                     continue
 
-                stream_filelike = getattr(reader, "stream_from_filelike", None)
-                if callable(stream_filelike):
-                    # Ensure the member stream is closed after streaming
-                    with fobj:
-                        yield from stream_filelike(fobj, name=mname, **child_kwargs)
-                else:
-                    # Fallback: materialize member to a temp file for readers that need a path
-                    suffix = "".join(Path(mname).suffixes) or ".bin"
-                    with tempfile.NamedTemporaryFile(
-                        suffix=suffix, delete=False
-                    ) as tmp:
-                        with fobj:
-                            shutil.copyfileobj(fobj, tmp, length=1024 * 1024)
-                        tmp_path = tmp.name
-                    try:
-                        yield from reader.stream(tmp_path, **child_kwargs)
-                    finally:
-                        try:
-                            Path(tmp_path).unlink(missing_ok=True)
-                        except Exception:
-                            pass
+                # Single handoff point: reader selection + filelike vs tempfile fallback.
+                # Ensures nested compression (e.g., *.csv.gz inside tar) is handled via member_name.
+                with fobj:
+                    yield from read_from_filelike(
+                        fobj, member_name=mname, **child_kwargs
+                    )
 
 
 from . import registry

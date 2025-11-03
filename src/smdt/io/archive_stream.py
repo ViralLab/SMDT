@@ -1,3 +1,4 @@
+# smdt/io/readers/archive_stream.py
 from __future__ import annotations
 
 import logging
@@ -5,7 +6,7 @@ import tarfile
 import zipfile
 from typing import Any, Callable, Dict, Iterable, Iterator, Mapping, Tuple
 
-from smdt.io.readers import get_reader
+from smdt.io.readers.registry import read_from_filelike
 from smdt.standardizers.base import SourceInfo
 
 log = logging.getLogger(__name__)
@@ -24,29 +25,19 @@ def _yield_from_filelike(
     reader_name_fallback: str | None,
 ) -> Iterator[Record]:
     """
-    Stream records from a file-like object using the best available reader.
-
-    Uses `reader.stream_from_filelike(f)` when available; otherwise falls back to
-    `reader.stream(member_name, **kwargs)` (which may re-open by path/name).
+    Stream records from a file-like object using the registry handoff.
+    Ensures nested compression is handled via member_name.
     """
-    sub_reader = get_reader(member_name)
-    if not sub_reader:
-        log.debug("No reader for member: %s::%s", archive_path, member_name)
-        return
-
-    src = SourceInfo(path=archive_path, member=member_name, hints=hints)
-    # Prefer the sub-reader's self-reported name if present
-    sub_reader_name = getattr(sub_reader, "name", None) or reader_name_fallback
+    # Derive sub-reader name hint (if any) and resolve kwargs
+    sub_reader_name = reader_name_fallback
     rk = reader_kwargs_for(member_name, sub_reader_name)
 
-    stream_from_filelike = getattr(sub_reader, "stream_from_filelike", None)
-    if callable(stream_from_filelike):
-        for rec in stream_from_filelike(file_like, **rk):
-            yield rec, src
-    else:
-        # Fallback: some readers only accept a path/name
-        for rec in sub_reader.stream(member_name, **rk):
-            yield rec, src
+    src = SourceInfo(path=archive_path, member=member_name, hints=hints)
+
+    # Single handoff point: will use stream_from_filelike(...) if available,
+    # otherwise materialize to a temp file and call read(...).
+    for rec in read_from_filelike(file_like, member_name=member_name, **rk):
+        yield rec, src
 
 
 def stream_archive_records(
@@ -65,64 +56,68 @@ def stream_archive_records(
     archive_path : str
         Path to the .zip or .tar.* archive on disk.
     members : Iterable[Any]
-        Iterable of plan members where each `m` has attributes:
-        - m.name : str
-        - m.included : bool
-        - m.reader_name : Optional[str]
+        Iterable of plan members with attributes:
+          - m.name : str
+          - m.included : bool
+          - m.reader_name : Optional[str]  (hint; not required)
     hints : Optional[Dict[str, Any]]
         Extra metadata propagated into SourceInfo.
     reader_kwargs_for : Callable[[member_path, reader_name], dict]
-        Function that resolves reader kwargs by extension/reader name.
+        Resolves reader kwargs by extension/reader name.
     reader_name_fallback : Optional[str]
-        Reader name from the parent file plan, used if sub-reader has no name.
-
-    Yields
-    ------
-    Iterator[Tuple[Mapping[str, Any], SourceInfo]]
+        Reader name from the parent file plan, used as a hint.
     """
     lower = archive_path.lower()
+
     if lower.endswith(".zip"):
         with zipfile.ZipFile(archive_path, "r") as zf:
             for m in members:
-                if not (
-                    getattr(m, "included", False) and getattr(m, "reader_name", None)
-                ):
+                if not getattr(m, "included", False):
+                    continue
+                mname = getattr(m, "name", None)
+                if not mname:
                     continue
                 try:
-                    with zf.open(m.name, "r") as fobj:
+                    with zf.open(mname, "r") as fobj:
                         yield from _yield_from_filelike(
                             archive_path,
-                            m.name,
+                            mname,
                             fobj,
                             hints=hints,
                             reader_kwargs_for=reader_kwargs_for,
                             reader_name_fallback=reader_name_fallback,
                         )
                 except KeyError:
-                    log.debug("Zip member missing: %s::%s", archive_path, m.name)
+                    log.debug("Zip member missing: %s::%s", archive_path, mname)
         return
 
     # tar / tgz / tbz2 / txz
     with tarfile.open(archive_path, "r:*") as tf:
         for m in members:
-            if not (getattr(m, "included", False) and getattr(m, "reader_name", None)):
+            if not getattr(m, "included", False):
                 continue
-            ti = tf.getmember(m.name)
-            fobj = tf.extractfile(ti)
-            if not fobj:
-                log.debug("Tar member had no stream: %s::%s", archive_path, m.name)
+            mname = getattr(m, "name", None)
+            if not mname:
                 continue
             try:
-                yield from _yield_from_filelike(
-                    archive_path,
-                    m.name,
-                    fobj,
-                    hints=hints,
-                    reader_kwargs_for=reader_kwargs_for,
-                    reader_name_fallback=reader_name_fallback,
-                )
-            finally:
-                try:
-                    fobj.close()
-                except Exception:
-                    pass
+                ti = tf.getmember(mname)
+            except KeyError:
+                log.debug("Tar member missing: %s::%s", archive_path, mname)
+                continue
+            fobj = tf.extractfile(ti)
+            if not fobj:
+                log.debug("Tar member had no stream: %s::%s", archive_path, mname)
+                continue
+            try:
+                with fobj:
+                    yield from _yield_from_filelike(
+                        archive_path,
+                        mname,
+                        fobj,
+                        hints=hints,
+                        reader_kwargs_for=reader_kwargs_for,
+                        reader_name_fallback=reader_name_fallback,
+                    )
+            except Exception:
+                # keep iterating other members; detailed reader errors will be logged upstream
+                raise
