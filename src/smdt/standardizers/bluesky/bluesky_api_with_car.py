@@ -213,7 +213,6 @@ class BlueSkyAPICARStandardizer(Standardizer):
                         post_id=post_id,
                         conversation_id=None,
                         body=record.get("text"),
-                        engagement_count=None,
                         location=None,
                         retrieved_at=retrieved_at,
                     )
