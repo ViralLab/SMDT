@@ -47,7 +47,14 @@ class Posts:
     post_id: Optional[str] = None
     conversation_id: Optional[str] = None
     body: Optional[str] = None
-    engagement_count: Optional[int] = None
+
+    like_count: Optional[int] = None
+    view_count: Optional[int] = None
+    share_count: Optional[int] = None
+    comment_count: Optional[int] = None
+    quote_count: Optional[int] = None
+    bookmark_count: Optional[int] = None
+
     location: Optional[Union[str, Tuple[float, float], List[float]]] = None
     retrieved_at: Optional[datetime] = None
 
@@ -69,11 +76,19 @@ class Posts:
         if ca.tzinfo is None or ca.tzinfo.utcoffset(ca) is None:
             object.__setattr__(self, "created_at", ca.replace(tzinfo=timezone.utc))
 
-        # non-negative engagement_count
-        if self.engagement_count is not None and self.engagement_count < 0:
-            raise ValueError(
-                f"engagement_count must be >= 0 (got {self.engagement_count})"
-            )
+        # non-negative like count
+        if self.like_count is not None and self.like_count < 0:
+            raise ValueError(f"like_count must be >= 0 (got {self.like_count})")
+        if self.view_count is not None and self.view_count < 0:
+            raise ValueError(f"view_count must be >= 0 (got {self.view_count})")
+        if self.share_count is not None and self.share_count < 0:
+            raise ValueError(f"share_count must be >= 0 (got {self.share_count})")
+        if self.comment_count is not None and self.comment_count < 0:
+            raise ValueError(f"comment_count must be >= 0 (got {self.comment_count})")
+        if self.quote_count is not None and self.quote_count < 0:
+            raise ValueError(f"quote_count must be >= 0 (got {self.quote_count})")
+        if self.bookmark_count is not None and self.bookmark_count < 0:
+            raise ValueError(f"bookmark_count must be >= 0 (got {self.bookmark_count})")
 
         # normalize empty strings to None for nullable text fields
         for name in ("post_id", "conversation_id", "body"):
@@ -97,7 +112,12 @@ class Posts:
             "account_id",
             "conversation_id",
             "body",
-            "engagement_count",
+            "like_count",
+            "view_count",
+            "share_count",
+            "comment_count",
+            "quote_count",
+            "bookmark_count",
             "location",
             "created_at",
             "retrieved_at",
@@ -113,7 +133,12 @@ class Posts:
             self.account_id,
             self.conversation_id,
             self.body,
-            self.engagement_count,
+            self.like_count,
+            self.view_count,
+            self.share_count,
+            self.comment_count,
+            self.quote_count,
+            self.bookmark_count,
             self.location,  # "(lon,lat)" or None
             self.created_at,
             self.retrieved_at,
@@ -134,7 +159,12 @@ class Posts:
             post_id=row.get("post_id"),
             conversation_id=row.get("conversation_id"),
             body=row.get("body"),
-            engagement_count=row.get("engagement_count"),
+            like_count=row.get("like_count"),
+            view_count=row.get("view_count"),
+            share_count=row.get("share_count"),
+            comment_count=row.get("comment_count"),
+            quote_count=row.get("quote_count"),
+            bookmark_count=row.get("bookmark_count"),
             location=_normalize_point(loc),
             retrieved_at=row.get("retrieved_at"),
         )

@@ -37,11 +37,21 @@ CREATE TABLE IF NOT EXISTS posts (
     account_id TEXT NOT NULL,
     conversation_id TEXT,
     body TEXT,
-    engagement_count BIGINT,
+    like_count BIGINT,
+    view_count BIGINT,
+    share_count BIGINT,
+    comment_count BIGINT,
+    quote_count BIGINT,
+    bookmark_count BIGINT,
     location geometry(Point, 4326),         
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
-    CHECK (engagement_count IS NULL OR engagement_count >= 0),
+    CHECK (like_count IS NULL OR like_count >= 0),
+    CHECK (view_count IS NULL OR view_count >= 0),
+    CHECK (share_count IS NULL OR share_count >= 0),
+    CHECK (comment_count IS NULL OR comment_count >= 0),
+    CHECK (quote_count IS NULL OR quote_count >= 0),
+    CHECK (bookmark_count IS NULL OR bookmark_count >= 0),
     PRIMARY KEY (created_at, id)
 );
 
