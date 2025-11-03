@@ -50,7 +50,7 @@ class JsonlReader(Reader):
                     continue
                 try:
                     yield orjson.loads(s)
-                except orjson.JSONDecodeError:  
+                except orjson.JSONDecodeError:
                     yield json_repair.loads(s)
                 except Exception:
                     # skip malformed line but keep streaming
