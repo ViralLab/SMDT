@@ -1,5 +1,6 @@
 from __future__ import annotations
 import io
+import orjson
 import json_repair
 from typing import Iterable, Mapping, Any, Optional, BinaryIO
 
@@ -48,6 +49,8 @@ class JsonlReader(Reader):
                 if not s:
                     continue
                 try:
+                    yield orjson.loads(s)
+                except orjson.JSONDecodeError:  
                     yield json_repair.loads(s)
                 except Exception:
                     # skip malformed line but keep streaming
@@ -70,6 +73,8 @@ class JsonlReader(Reader):
             if not s:
                 continue
             try:
+                yield orjson.loads(s)
+            except orjson.JSONDecodeError:
                 yield json_repair.loads(s)
             except Exception:
                 continue
