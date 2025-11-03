@@ -134,11 +134,10 @@ def _account_from_user(
 class TwitterV2Standardizer(Standardizer):
     name: str = "twitter_v2"
 
-    def standardize(self, record: Mapping[str, Any], src: SourceInfo) -> Iterable[Any]:
-        all_accounts: List[Any] = []
-        all_posts: List[Any] = []
-        all_entities: List[Any] = []
-        all_actions: List[Any] = []
+    def standardize(self, input_record) -> List[Any]:
+        record, src = input_record
+
+        outputs = []
 
         ra = _retrieved_at(record)
         tweet = record.get("data") or record
@@ -153,14 +152,14 @@ class TwitterV2Standardizer(Standardizer):
         author_user = _find_user_includes(record, author_id)
         acct_row = _account_from_user(author_user, ra) if author_user else None
         if acct_row:
-            all_accounts.append(acct_row)
+            outputs.append(acct_row)
         # else: skip author account (strict), but we can still emit the post
 
         # Emit main post if we have an account_id for it (tweet always has author_id)
         if author_id:
             pt = tweet.get("public_metrics") or {}
             loc = _point_ewkt(tweet.get("geo") or {})
-            all_posts.append(
+            outputs.append(
                 Posts(
                     created_at=t_created,
                     retrieved_at=ra,
@@ -175,7 +174,7 @@ class TwitterV2Standardizer(Standardizer):
 
         # Entities from text
         for tag in extract_hashtags(text):
-            all_entities.append(
+            outputs.append(
                 Entities(
                     created_at=t_created,
                     retrieved_at=ra,
@@ -186,7 +185,7 @@ class TwitterV2Standardizer(Standardizer):
                 )
             )
         for m in extract_mentions(text):
-            all_entities.append(
+            outputs.append(
                 Entities(
                     created_at=t_created,
                     retrieved_at=ra,
@@ -197,7 +196,7 @@ class TwitterV2Standardizer(Standardizer):
                 )
             )
         for u in extract_urls(text):
-            all_entities.append(
+            outputs.append(
                 Entities(
                     created_at=t_created,
                     retrieved_at=ra,
@@ -208,7 +207,7 @@ class TwitterV2Standardizer(Standardizer):
                 )
             )
         for e in extract_emails(text):
-            all_entities.append(
+            outputs.append(
                 Entities(
                     created_at=t_created,
                     retrieved_at=ra,
@@ -237,7 +236,7 @@ class TwitterV2Standardizer(Standardizer):
             r_user = r_tweet.get("author") or _find_user_includes(record, r_auth)
             r_acct = _account_from_user(r_user, ra) if r_user else None
             if r_acct:
-                all_accounts.append(r_acct)
+                outputs.append(r_acct)
 
             # referenced post
             r_created = _dt(r_tweet.get("created_at")) or ra
@@ -245,7 +244,7 @@ class TwitterV2Standardizer(Standardizer):
                 r_text = r_tweet.get("text") or ""
                 r_loc = _point_ewkt(r_tweet.get("geo") or {})
                 r_pm = r_tweet.get("public_metrics") or {}
-                all_posts.append(
+                outputs.append(
                     Posts(
                         created_at=r_created,
                         retrieved_at=ra,
@@ -269,7 +268,7 @@ class TwitterV2Standardizer(Standardizer):
                 )
             )
             if atype:
-                all_actions.append(
+                outputs.append(
                     Actions(
                         created_at=t_created,
                         retrieved_at=ra,
@@ -281,12 +280,4 @@ class TwitterV2Standardizer(Standardizer):
                     )
                 )
 
-        # Emit (order doesn’t matter to DB)
-        for it in all_accounts:
-            yield it
-        for it in all_posts:
-            yield it
-        for it in all_entities:
-            yield it
-        for it in all_actions:
-            yield it
+        return outputs

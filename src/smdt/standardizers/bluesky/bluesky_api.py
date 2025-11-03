@@ -57,10 +57,6 @@ def _dt_iso(ts: Any) -> Optional[datetime]:
         return None
 
 
-def _retrieved_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _guess_kind(src: SourceInfo, row: Mapping[str, Any]) -> str:
     """
     Classify the row so we choose the right parsing branch.
@@ -243,7 +239,11 @@ class BlueSkyAPIStandardizer(Standardizer):
 
     name: str = "bluesky_api"
 
-    def standardize(self, record: Mapping[str, Any], src: SourceInfo) -> Iterable[Any]:
+    def standardize(self, input_record) -> Iterable[Any]:
+        record, src = input_record
+
+        outputs = []
+
         retrieved_at = None
         kind = _guess_kind(src, record)
 
@@ -251,22 +251,24 @@ class BlueSkyAPIStandardizer(Standardizer):
         if kind == "user":
             did = _as_id(record.get("did"))
             if not did:
-                return
+                return outputs
             created = _dt_iso(record.get("createdAt")) or retrieved_at
-            yield Accounts(
-                created_at=created,
-                retrieved_at=retrieved_at,
-                account_id=did,
-                username=_s(record.get("handle")) or None,
-                profile_name=_s(record.get("displayName")) or None,
-                bio=_s(record.get("description")) or None,
-                post_count=record.get("postsCount"),
-                friend_count=record.get("followsCount"),
-                follower_count=record.get("followersCount"),
-                is_verified=None,  # Bluesky has labels; map if you wish
-                profile_image_url=_s(record.get("avatar")) or None,
+            outputs.append(
+                Accounts(
+                    created_at=created,
+                    retrieved_at=retrieved_at,
+                    account_id=did,
+                    username=_s(record.get("handle")) or None,
+                    profile_name=_s(record.get("displayName")) or None,
+                    bio=_s(record.get("description")) or None,
+                    post_count=record.get("postsCount"),
+                    friend_count=record.get("followsCount"),
+                    follower_count=record.get("followersCount"),
+                    is_verified=None,  # Bluesky has labels; map if you wish
+                    profile_image_url=_s(record.get("avatar")) or None,
+                )
             )
-            return
+            return outputs
 
         # -------- POSTS --------
         if kind == "post":
@@ -277,29 +279,31 @@ class BlueSkyAPIStandardizer(Standardizer):
             text = _s(record.get("text"))
 
             if post_id and author:
-                yield Posts(
-                    created_at=created,
-                    retrieved_at=retrieved_at,
-                    post_id=post_id,
-                    account_id=author,
-                    conversation_id=None,
-                    body=text,
-                    engagement_count=None,  # API post rows typically lack counts
-                    location=None,
+                outputs.append(
+                    Posts(
+                        created_at=created,
+                        retrieved_at=retrieved_at,
+                        post_id=post_id,
+                        account_id=author,
+                        conversation_id=None,
+                        body=text,
+                        engagement_count=None,  # API post rows typically lack counts
+                        location=None,
+                    )
                 )
 
                 # entities from facets & embeds
                 for ent in _emit_facets_entities(
                     post_id, author, created, retrieved_at, record
                 ):
-                    yield ent
+                    outputs.append(ent)
 
                 # COMMENT / QUOTE inferred from reply/embed
                 for act in _emit_post_relationship_actions(
                     record, author, created, retrieved_at
                 ):
-                    yield act
-            return
+                    outputs.append(act)
+            return outputs
 
         # -------- REPOST --------
         if kind == "repost":
@@ -311,16 +315,18 @@ class BlueSkyAPIStandardizer(Standardizer):
             tgt_acc = _did_from_uri(tgt_uri)
 
             if actor and (tgt_post or tgt_acc):
-                yield Actions(
-                    created_at=created,
-                    retrieved_at=retrieved_at,
-                    action_type=ActionType.SHARE,
-                    originator_account_id=actor,
-                    originator_post_id=None,
-                    target_account_id=tgt_acc,
-                    target_post_id=tgt_post,
+                outputs.append(
+                    Actions(
+                        created_at=created,
+                        retrieved_at=retrieved_at,
+                        action_type=ActionType.SHARE,
+                        originator_account_id=actor,
+                        originator_post_id=None,
+                        target_account_id=tgt_acc,
+                        target_post_id=tgt_post,
+                    )
                 )
-            return
+            return outputs
 
         # -------- LIKE --------
         if kind == "like":
@@ -332,37 +338,41 @@ class BlueSkyAPIStandardizer(Standardizer):
             tgt_acc = _did_from_uri(tgt_uri)
 
             if actor and (tgt_post or tgt_acc):
-                yield Actions(
-                    created_at=created,
-                    retrieved_at=retrieved_at,
-                    action_type=ActionType.UPVOTE,
-                    originator_account_id=actor,
-                    originator_post_id=None,
-                    target_account_id=tgt_acc,
-                    target_post_id=tgt_post,
+                outputs.append(
+                    Actions(
+                        created_at=created,
+                        retrieved_at=retrieved_at,
+                        action_type=ActionType.UPVOTE,
+                        originator_account_id=actor,
+                        originator_post_id=None,
+                        target_account_id=tgt_acc,
+                        target_post_id=tgt_post,
+                    )
                 )
-            return
+            return outputs
 
         if "user" in src.path:
             # sometimes user dumps have no $type but include did/handle
             did = _as_id(record.get("did"))
             if not did:
-                return
+                return outputs
             created_at = _dt_iso(record.get("createdAt")) or retrieved_at
-            yield Accounts(
-                created_at=created_at,
-                retrieved_at=retrieved_at,
-                account_id=did,
-                username=_s(record.get("handle")) or None,
-                profile_name=_s(record.get("displayName")) or None,
-                bio=_s(record.get("description")) or None,
-                post_count=record.get("postsCount"),
-                friend_count=record.get("followsCount"),
-                follower_count=record.get("followersCount"),
-                is_verified=None,
-                profile_image_url=_s(record.get("avatar")) or None,
+            outputs.append(
+                Accounts(
+                    created_at=created_at,
+                    retrieved_at=retrieved_at,
+                    account_id=did,
+                    username=_s(record.get("handle")) or None,
+                    profile_name=_s(record.get("displayName")) or None,
+                    bio=_s(record.get("description")) or None,
+                    post_count=record.get("postsCount"),
+                    friend_count=record.get("followsCount"),
+                    follower_count=record.get("followersCount"),
+                    is_verified=None,
+                    profile_image_url=_s(record.get("avatar")) or None,
+                )
             )
-            return
+            return outputs
 
         # -------- OTHER / UNKNOWN --------
-        return
+        return outputs

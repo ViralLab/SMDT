@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Optional, Set
+from typing import Any, List, Mapping, Optional, Set
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.standardizers.utils import (
@@ -374,15 +374,15 @@ class TwitterV1Standardizer(Standardizer):
             )
 
     # --------- main API ---------
-    def standardize(self, record: Mapping[str, Any], src: SourceInfo) -> Iterable[Any]:
+    def standardize(self, input_record) -> List[Any]:
         """
         Accept a single Twitter v1 tweet object (possibly with nested retweet/quote trees)
         and yield Accounts, Posts, Actions, Entities built from it.
 
-        Yields:
-            Accounts | Posts | Actions | Entities
+        Returns:
+            A list of standardized entities.
         """
-
+        record, src = input_record
         # Not available in v1 tweets; use current time
         retrieved_at = datetime.now(timezone.utc)
 
@@ -394,5 +394,4 @@ class TwitterV1Standardizer(Standardizer):
         self._extract_actions(record, outputs, retrieved_at)
         self._extract_entities(record, outputs, retrieved_at)
 
-        for o in outputs:
-            yield o
+        return list(outputs)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Iterable, List, Mapping, Optional, Sequence
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.standardizers.utils import (
@@ -126,7 +126,7 @@ def _member_kind(src: SourceInfo) -> str:
 class BlueSkyDatasetStandardizer(Standardizer):
     name: str = "bluesky_dataset_standardizer"
 
-    def standardize(self, record: Mapping[str, Any], src: SourceInfo) -> Iterable[Any]:
+    def standardize(self, input_record) -> List[Any]:
         """
         Emits: Accounts, Posts, Entities, Actions for Bluesky dumps.
 
@@ -137,6 +137,9 @@ class BlueSkyDatasetStandardizer(Standardizer):
           - likes: CSV/TSV rows:
               [liker_id, post_author_id, post_id, timestamp]
         """
+        record, src = input_record
+        outputs = []
+
         kind = _member_kind(src)
         ra = _retrieved_at(record)
 
@@ -155,11 +158,13 @@ class BlueSkyDatasetStandardizer(Standardizer):
             if user_id:
                 # We don't know the true account creation time; set created_at = row time (or RA) to keep row valid.
                 acct_created = created_at or ra
-                yield Accounts(
-                    created_at=acct_created,
-                    retrieved_at=ra,
-                    account_id=user_id,
-                    # optional fields left None (username, profile_name, etc.)
+                outputs.append(
+                    Accounts(
+                        created_at=acct_created,
+                        retrieved_at=ra,
+                        account_id=user_id,
+                        # optional fields left None (username, profile_name, etc.)
+                    )
                 )
 
             # Post
@@ -175,55 +180,65 @@ class BlueSkyDatasetStandardizer(Standardizer):
                 )
                 body = _to_str(record.get("text"))
 
-                yield Posts(
-                    created_at=created_at or ra,
-                    retrieved_at=ra,
-                    post_id=post_id,
-                    account_id=user_id,
-                    conversation_id=None,
-                    body=body,
-                    engagement_count=engagement,
-                    location=None,
+                outputs.append(
+                    Posts(
+                        created_at=created_at or ra,
+                        retrieved_at=ra,
+                        post_id=post_id,
+                        account_id=user_id,
+                        conversation_id=None,
+                        body=body,
+                        engagement_count=engagement,
+                        location=None,
+                    )
                 )
 
                 # Entities from text
                 for tag in extract_hashtags(body):
-                    yield Entities(
-                        created_at=created_at or ra,
-                        retrieved_at=ra,
-                        entity_type=EntityType.HASHTAG,
-                        account_id=user_id,
-                        post_id=post_id,
-                        body=tag.replace("#", ""),
+                    outputs.append(
+                        Entities(
+                            created_at=created_at or ra,
+                            retrieved_at=ra,
+                            entity_type=EntityType.HASHTAG,
+                            account_id=user_id,
+                            post_id=post_id,
+                            body=tag.replace("#", ""),
+                        )
                     )
                 for m in extract_mentions(body):
-                    yield Entities(
-                        created_at=created_at or ra,
-                        retrieved_at=ra,
-                        entity_type=EntityType.USER_TAG,
-                        account_id=user_id,
-                        post_id=post_id,
-                        body=m.replace("@", ""),
+                    outputs.append(
+                        Entities(
+                            created_at=created_at or ra,
+                            retrieved_at=ra,
+                            entity_type=EntityType.USER_TAG,
+                            account_id=user_id,
+                            post_id=post_id,
+                            body=m.replace("@", ""),
+                        )
                     )
                 for u in extract_urls(body):
-                    yield Entities(
-                        created_at=created_at or ra,
-                        retrieved_at=ra,
-                        entity_type=EntityType.LINK,
-                        account_id=user_id,
-                        post_id=post_id,
-                        body=str(u),
+                    outputs.append(
+                        Entities(
+                            created_at=created_at or ra,
+                            retrieved_at=ra,
+                            entity_type=EntityType.LINK,
+                            account_id=user_id,
+                            post_id=post_id,
+                            body=str(u),
+                        )
                     )
                 for e in extract_emails(body):
-                    yield Entities(
-                        created_at=created_at or ra,
-                        retrieved_at=ra,
-                        entity_type=EntityType.EMAIL,
-                        account_id=user_id,
-                        post_id=post_id,
-                        body=e,
+                    outputs.append(
+                        Entities(
+                            created_at=created_at or ra,
+                            retrieved_at=ra,
+                            entity_type=EntityType.EMAIL,
+                            account_id=user_id,
+                            post_id=post_id,
+                            body=e,
+                        )
                     )
-            return  # done for this row
+            return outputs
 
         # -------- INTERACTIONS (CSV/TSV row) ----------
         if kind == "interactions":
@@ -261,7 +276,9 @@ class BlueSkyDatasetStandardizer(Standardizer):
             # Emit bare accounts so FK constraints are happy later
             for uid in (originator, replied, root_auth, reposted, quoted):
                 if uid:
-                    yield Accounts(created_at=ts, retrieved_at=ra, account_id=uid)
+                    outputs.append(
+                        Accounts(created_at=ts, retrieved_at=ra, account_id=uid)
+                    )
 
             # Build one action row if we can classify
             atype = None
@@ -280,16 +297,18 @@ class BlueSkyDatasetStandardizer(Standardizer):
                 target_acc = root_auth
 
             if originator and target_acc:
-                yield Actions(
-                    created_at=ts,
-                    retrieved_at=ra,
-                    action_type=atype or ActionType.UNKNOWN,
-                    originator_account_id=originator,
-                    originator_post_id=None,
-                    target_account_id=target_acc,
-                    target_post_id=None,
+                outputs.append(
+                    Actions(
+                        created_at=ts,
+                        retrieved_at=ra,
+                        action_type=atype or ActionType.UNKNOWN,
+                        originator_account_id=originator,
+                        originator_post_id=None,
+                        target_account_id=target_acc,
+                        target_post_id=None,
+                    )
                 )
-            return
+            return outputs
 
         # -------- LIKES (CSV/TSV row) ----------
         if kind == "likes":
@@ -313,19 +332,23 @@ class BlueSkyDatasetStandardizer(Standardizer):
             # minimal accounts (again, Bluesky dumps often lack user profiles)
             for uid in (liker, author):
                 if uid:
-                    yield Accounts(created_at=ts, retrieved_at=ra, account_id=uid)
+                    outputs.append(
+                        Accounts(created_at=ts, retrieved_at=ra, account_id=uid)
+                    )
 
             if liker and (author or post_id):
-                yield Actions(
-                    created_at=ts,
-                    retrieved_at=ra,
-                    action_type=ActionType.UPVOTE,
-                    originator_account_id=liker,
-                    originator_post_id=None,
-                    target_account_id=author,
-                    target_post_id=post_id,
+                outputs.append(
+                    Actions(
+                        created_at=ts,
+                        retrieved_at=ra,
+                        action_type=ActionType.UPVOTE,
+                        originator_account_id=liker,
+                        originator_post_id=None,
+                        target_account_id=author,
+                        target_post_id=post_id,
+                    )
                 )
-            return
+            return outputs
 
         # -------- unknown kind: try best-effort post shape ----------
         # If a user hands us a single JSON file outside expected names, try to parse post-ish rows.
@@ -334,50 +357,63 @@ class BlueSkyDatasetStandardizer(Standardizer):
         if post_id and user_id:
             created_at = _dt(record.get("date") or record.get("created_at")) or ra
             body = _to_str(record.get("text"))
-            yield Accounts(created_at=created_at, retrieved_at=ra, account_id=user_id)
-            yield Posts(
-                created_at=created_at,
-                retrieved_at=ra,
-                post_id=post_id,
-                account_id=user_id,
-                conversation_id=None,
-                body=body,
-                engagement_count=None,
-                location=None,
+            outputs.append(
+                Accounts(created_at=created_at, retrieved_at=ra, account_id=user_id)
+            )
+            outputs.append(
+                Posts(
+                    created_at=created_at,
+                    retrieved_at=ra,
+                    post_id=post_id,
+                    account_id=user_id,
+                    conversation_id=None,
+                    body=body,
+                    engagement_count=None,
+                    location=None,
+                )
             )
             for tag in extract_hashtags(body):
-                yield Entities(
-                    created_at=created_at,
-                    retrieved_at=ra,
-                    entity_type=EntityType.HASHTAG,
-                    account_id=user_id,
-                    post_id=post_id,
-                    body=tag.replace("#", ""),
+                outputs.append(
+                    Entities(
+                        created_at=created_at,
+                        retrieved_at=ra,
+                        entity_type=EntityType.HASHTAG,
+                        account_id=user_id,
+                        post_id=post_id,
+                        body=tag.replace("#", ""),
+                    )
                 )
             for m in extract_mentions(body):
-                yield Entities(
-                    created_at=created_at,
-                    retrieved_at=ra,
-                    entity_type=EntityType.USER_TAG,
-                    account_id=user_id,
-                    post_id=post_id,
-                    body=m.replace("@", ""),
+                outputs.append(
+                    Entities(
+                        created_at=created_at,
+                        retrieved_at=ra,
+                        entity_type=EntityType.USER_TAG,
+                        account_id=user_id,
+                        post_id=post_id,
+                        body=m.replace("@", ""),
+                    )
                 )
             for u in extract_urls(body):
-                yield Entities(
-                    created_at=created_at,
-                    retrieved_at=ra,
-                    entity_type=EntityType.LINK,
-                    account_id=user_id,
-                    post_id=post_id,
-                    body=str(u),
+                outputs.append(
+                    Entities(
+                        created_at=created_at,
+                        retrieved_at=ra,
+                        entity_type=EntityType.LINK,
+                        account_id=user_id,
+                        post_id=post_id,
+                        body=str(u),
+                    )
                 )
             for e in extract_emails(body):
-                yield Entities(
-                    created_at=created_at,
-                    retrieved_at=ra,
-                    entity_type=EntityType.EMAIL,
-                    account_id=user_id,
-                    post_id=post_id,
-                    body=e,
+                outputs.append(
+                    Entities(
+                        created_at=created_at,
+                        retrieved_at=ra,
+                        entity_type=EntityType.EMAIL,
+                        account_id=user_id,
+                        post_id=post_id,
+                        body=e,
+                    )
                 )
+        return outputs
