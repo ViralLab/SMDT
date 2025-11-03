@@ -22,8 +22,6 @@ class Standardizer:
 
     name: str
 
-    def standardize(
-        self, record: Mapping[str, Any], src: SourceInfo
-    ) -> Iterable[DBModelLike]:
+    def standardize(self, input_record) -> Iterable[DBModelLike]:
         """Convert a raw record into 0..N DB model instances."""
         raise NotImplementedError
