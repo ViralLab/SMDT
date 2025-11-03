@@ -42,16 +42,16 @@ def _retrieved_at(root: Mapping[str, Any]) -> datetime:
     return ra or datetime.now(timezone.utc)
 
 
-def _sum_metrics(m: Optional[Mapping[str, Any]]) -> Optional[int]:
-    if not m:
-        return None
-    total = 0
-    for v in m.values():
-        try:
-            total += int(v or 0)
-        except Exception:
-            pass
-    return total
+# def _sum_metrics(m: Optional[Mapping[str, Any]]) -> Optional[int]:
+#     if not m:
+#         return None
+#     total = 0
+#     for v in m.values():
+#         try:
+#             total += int(v or 0)
+#         except Exception:
+#             pass
+#     return total
 
 
 def _point_ewkt(place: Optional[Mapping[str, Any]]) -> Optional[str]:
@@ -73,6 +73,13 @@ def _point_ewkt(place: Optional[Mapping[str, Any]]) -> Optional[str]:
         except Exception:
             return None
     return None
+
+
+def map2int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
 
 
 def _find_user_includes(
@@ -157,7 +164,7 @@ class TwitterV2Standardizer(Standardizer):
 
         # Emit main post if we have an account_id for it (tweet always has author_id)
         if author_id:
-            pt = tweet.get("public_metrics") or {}
+            metrics = tweet.get("public_metrics") or {}
             loc = _point_ewkt(tweet.get("geo") or {})
             outputs.append(
                 Posts(
@@ -167,7 +174,12 @@ class TwitterV2Standardizer(Standardizer):
                     account_id=author_id,
                     conversation_id=tweet.get("conversation_id"),
                     body=text,
-                    engagement_count=_sum_metrics(pt),
+                    like_count=map2int(metrics.get("like_count")),
+                    view_count=map2int(metrics.get("impression_count")),
+                    share_count=map2int(metrics.get("retweet_count")),
+                    comment_count=map2int(metrics.get("reply_count")),
+                    quote_count=map2int(metrics.get("quote_count")),
+                    bookmark_count=None,
                     location=loc,
                 )
             )
@@ -243,7 +255,7 @@ class TwitterV2Standardizer(Standardizer):
             if r_auth:
                 r_text = r_tweet.get("text") or ""
                 r_loc = _point_ewkt(r_tweet.get("geo") or {})
-                r_pm = r_tweet.get("public_metrics") or {}
+                metrics = r_tweet.get("public_metrics") or {}
                 outputs.append(
                     Posts(
                         created_at=r_created,
@@ -252,7 +264,12 @@ class TwitterV2Standardizer(Standardizer):
                         account_id=r_auth,
                         conversation_id=r_tweet.get("conversation_id"),
                         body=r_text,
-                        engagement_count=_sum_metrics(r_pm),
+                        like_count=map2int(metrics.get("like_count")),
+                        view_count=map2int(metrics.get("impression_count")),
+                        share_count=map2int(metrics.get("retweet_count")),
+                        comment_count=map2int(metrics.get("reply_count")),
+                        quote_count=map2int(metrics.get("quote_count")),
+                        bookmark_count=None,
                         location=r_loc,
                     )
                 )

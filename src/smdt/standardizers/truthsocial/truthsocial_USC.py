@@ -24,6 +24,13 @@ def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
     return total
 
 
+def map2int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
 @dataclass
 class TruthSocialUSCStandardizer(Standardizer):
     name: str = "truthsocial_usc"
@@ -69,7 +76,12 @@ class TruthSocialUSCStandardizer(Standardizer):
                     post_id=post_id,
                     conversation_id=None,
                     body=record["status"],
-                    engagement_count=sum_engagements(record),
+                    like_count=map2int(record.get("like_count")),
+                    view_count=None,
+                    share_count=map2int(record.get("retruth_count")),
+                    comment_count=map2int(record.get("reply_count")),
+                    quote_count=None,
+                    bookmark_count=None,
                     location=None,
                     created_at=datetime.fromisoformat(record["timestamp"]),
                     retrieved_at=datetime.fromisoformat(record["timestamp"]),

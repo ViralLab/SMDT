@@ -32,6 +32,13 @@ def _point_ewkt(geo: Optional[Mapping[str, Any]]) -> Optional[str]:
             return None
 
 
+def map2int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
 @dataclass
 class TwitterV1Standardizer(Standardizer):
     name: str = "twitter_v1"
@@ -76,13 +83,13 @@ class TwitterV1Standardizer(Standardizer):
         if "quoted_status" in record:
             self._extract_accounts(record["quoted_status"], accounts, retrieved_at)
 
-    def _get_engagement_count(self, record: Mapping[str, Any]) -> Optional[int]:
-        total = 0
-        for key in ("retweet_count", "reply_count", "quote_count", "favorite_count"):
-            val = record.get(key)
-            if isinstance(val, int) and val >= 0:
-                total += val
-        return total if total > 0 else None
+    # def _get_engagement_count(self, record: Mapping[str, Any]) -> Optional[int]:
+    #     total = 0
+    #     for key in ("retweet_count", "reply_count", "quote_count", "favorite_count"):
+    #         val = record.get(key)
+    #         if isinstance(val, int) and val >= 0:
+    #             total += val
+    #     return total if total > 0 else None
 
     def _extract_posts_and_text_entities(
         self,
@@ -106,7 +113,12 @@ class TwitterV1Standardizer(Standardizer):
                     post_id=record.get("id_str"),
                     conversation_id=record.get("in_reply_to_status_id_str"),
                     body=body,
-                    engagement_count=self._get_engagement_count(record),
+                    like_count=map2int(record.get("favorite_count")),
+                    view_count=None,
+                    share_count=map2int(record.get("retweet_count")),
+                    comment_count=map2int(record.get("reply_count")),
+                    quote_count=map2int(record.get("quote_count")),
+                    bookmark_count=None,
                     location=_point_ewkt(record.get("geo")),
                     created_at=self._parse_dt(record.get("created_at")),
                     retrieved_at=retrieved_at,

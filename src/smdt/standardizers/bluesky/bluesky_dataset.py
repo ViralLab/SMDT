@@ -169,15 +169,6 @@ class BlueSkyDatasetStandardizer(Standardizer):
 
             # Post
             if post_id and user_id:
-                # engagement summary from common keys
-                pm = {
-                    "like_count": record.get("like_count"),
-                    "reply_count": record.get("reply_count"),
-                    "repost_count": record.get("repost_count"),
-                }
-                engagement = _sum_metrics(
-                    pm, ("like_count", "reply_count", "repost_count")
-                )
                 body = _to_str(record.get("text"))
 
                 outputs.append(
@@ -188,7 +179,12 @@ class BlueSkyDatasetStandardizer(Standardizer):
                         account_id=user_id,
                         conversation_id=None,
                         body=body,
-                        engagement_count=engagement,
+                        like_count=record.get("like_count"),
+                        view_count=None,
+                        share_count=record.get("repost_count"),
+                        comment_count=record.get("reply_count"),
+                        quote_count=None,
+                        bookmark_count=None,
                         location=None,
                     )
                 )
@@ -368,7 +364,11 @@ class BlueSkyDatasetStandardizer(Standardizer):
                     account_id=user_id,
                     conversation_id=None,
                     body=body,
-                    engagement_count=None,
+                    like_count=record.get("like_count"),
+                    view_count=None,
+                    share_count=record.get("repost_count"),
+                    comment_count=record.get("reply_count"),
+                    quote_count=None,
                     location=None,
                 )
             )

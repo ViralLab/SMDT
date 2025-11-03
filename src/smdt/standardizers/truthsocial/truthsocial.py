@@ -198,7 +198,12 @@ class TruthSocialStandardizer(Standardizer):
                         account_id=author or "",
                         conversation_id=None,
                         body=text,
-                        engagement_count=_sum3(like, rt, rep),
+                        like_count=_nz(like),
+                        view_count=None,
+                        share_count=_nz(rt),
+                        comment_count=_nz(rep),
+                        quote_count=None,
+                        bookmark_count=None,
                         location=None,
                     )
                 )

@@ -37,6 +37,14 @@ def nan_to_none(val):
     return val
 
 
+def map2int(value: Any) -> Optional[int]:
+    value = nan_to_none(value)
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
     total = 0
     for field in ("likeCount", "replyCount", "quoteCount", "retweetCount"):
@@ -143,6 +151,11 @@ class TwitterUSCStandardizer(Standardizer):
                     )
                 )
 
+                view_count_obj = literal_eval(
+                    nan_to_none(record.get("viewCount", "None"))
+                )
+                if isinstance(view_count_obj, dict):
+                    view_count = map2int(view_count_obj.get("count"))
                 outputs.append(
                     Posts(
                         created_at=created_at,
@@ -152,7 +165,12 @@ class TwitterUSCStandardizer(Standardizer):
                             conversation_id if conversation_id != "" else None
                         ),
                         body=body,
-                        engagement_count=sum_engagements(record),
+                        like_count=map2int(record.get("likeCount")),
+                        view_count=view_count,
+                        share_count=map2int(record.get("retruthCount")),
+                        comment_count=map2int(record.get("replyCount")),
+                        quote_count=map2int(record.get("quoteCount")),
+                        bookmark_count=None,
                         location=None,
                         retrieved_at=created_at,
                     )

@@ -287,7 +287,12 @@ class BlueSkyAPIStandardizer(Standardizer):
                         account_id=author,
                         conversation_id=None,
                         body=text,
-                        engagement_count=None,  # API post rows typically lack counts
+                        like_count=None,
+                        view_count=None,
+                        share_count=None,
+                        comment_count=None,
+                        quote_count=None,
+                        bookmark_count=None,
                         location=None,
                     )
                 )
