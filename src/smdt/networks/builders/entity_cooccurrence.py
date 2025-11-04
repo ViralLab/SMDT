@@ -30,11 +30,15 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
         raw_type = filters.get("entity_type", "HASHTAG")
         entity_type = raw_type.upper()
 
-        # Use psycopg/DB-API named placeholders: %(name)s
+        # Extract time filters
+        start_time = filters.get("start_time")
+        end_time = filters.get("end_time")
+
+        # Build time clause only if values exist
         time_clause = ""
-        if "start_time" in filters:
+        if start_time is not None:
             time_clause += " AND created_at >= %(start_time)s"
-        if "end_time" in filters:
+        if end_time is not None:
             time_clause += " AND created_at < %(end_time)s"
 
         # 1) Filter entities by type/time and deduplicate (post_id, body)
@@ -47,8 +51,8 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
                 body
             FROM entities
             WHERE entity_type = %(entity_type)s
-              AND body IS NOT NULL
-              {time_clause}
+            AND body IS NOT NULL
+            {time_clause}
         ),
         pairs AS (
             SELECT
@@ -57,8 +61,8 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
                 COUNT(*)                   AS weight
             FROM filtered_entities e1
             JOIN filtered_entities e2
-              ON e1.post_id = e2.post_id
-             AND e1.body < e2.body
+            ON e1.post_id = e2.post_id
+            AND e1.body < e2.body
             GROUP BY
                 LEAST(e1.body, e2.body),
                 GREATEST(e1.body, e2.body)
@@ -68,9 +72,10 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
         """
 
         params: Dict[str, Any] = {"entity_type": entity_type}
-        for k in ("start_time", "end_time"):
-            if k in filters:
-                params[k] = filters[k]
+        if start_time is not None:
+            params["start_time"] = start_time
+        if end_time is not None:
+            params["end_time"] = end_time
 
         return sql, params
 
