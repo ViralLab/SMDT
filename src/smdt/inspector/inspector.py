@@ -115,7 +115,7 @@ class Inspector:
             if only_tables
             else None
         )
-        conn = self.db.connect(self.db.db_name)
+        conn = self.db.connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(
