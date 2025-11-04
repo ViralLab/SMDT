@@ -5,11 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "atproto>=0.0.63",
     "black[jupyter]>=25.9.0",
     "colorama>=0.4.6",
     "dotenv>=0.9.9",
     "ijson>=3.4.0.post0",
     "json-repair>=0.52.1",
+    "networkx>=3.5",
     "openai>=2.6.0",
     "orjson>=3.11.3",
     "pandas>=2.3.3",
