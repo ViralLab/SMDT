@@ -75,12 +75,11 @@ class StandardDB:
     def _maintenance_db(self) -> str:
         return getattr(self.cfg, "default_dbname", None) or "postgres"
 
-    def connect(self, dbname: Optional[str] = None) -> psycopg.Connection:
-        # Keep options simple; application_name may contain spaces, so pass only if safe.
+    def connect(self) -> psycopg.Connection:
         appname = getattr(self.cfg, "application_name", "standarddb")
         options = f"-c application_name={appname!s}"
         return psycopg.connect(
-            dbname=dbname or self._maintenance_db(),
+            dbname=self.db_name or self._maintenance_db(),
             user=self.cfg.user,
             password=self.cfg.password,
             host=self.cfg.host,
@@ -141,7 +140,7 @@ class StandardDB:
             raise ValueError("cfg.owner (schema name) is required for reset_schema().")
         log.info("Resetting schema '%s' in database %s", schema, self.db_name)
         start = time.time()
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         try:
             conn.autocommit = True
             with conn.cursor() as cur:
@@ -169,7 +168,7 @@ class StandardDB:
             log.warning("Schema file %s is empty; nothing to do.", p)
             return
 
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         try:
             with conn.cursor() as cur:
@@ -279,7 +278,7 @@ class StandardDB:
 
         params = [adapt_row(e) for e in items]
 
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         start = time.time()
         try:
@@ -375,7 +374,7 @@ class StandardDB:
                 vals[idx] = Jsonb(vals[idx])
             return tuple(vals)
 
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         start = time.time()
         try:
@@ -467,7 +466,7 @@ class StandardDB:
             writer.writerow(row)
         buf.seek(0)
 
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         try:
             with conn.cursor() as cur:
@@ -581,7 +580,7 @@ class StandardDB:
         # 3) Row-by-row with SAVEPOINT and NUL scrubbing
         bad = 0
         ok = 0
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         try:
             col_list = sql.SQL(", ").join(map(sql.Identifier, cols))
@@ -694,7 +693,7 @@ class StandardDB:
 
         tmp_name = f"tmp_{table_name}_{int(time.time())}_{id(items) % 10000}"
 
-        conn = self.connect(self.db_name)
+        conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         try:
             with conn.cursor() as cur:
