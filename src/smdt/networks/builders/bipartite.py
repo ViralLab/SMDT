@@ -36,11 +36,14 @@ class BipartiteNetworkBuilder(NetworkBuilder):
                 f"Bipartite network not implemented for right='{right}'"
             )
 
-        # Optional time filters – use psycopg style placeholders: %(name)s
+        # Get actual values (might be None)
+        start_time = filters.get("start_time")
+        end_time = filters.get("end_time")
+
         time_clause = ""
-        if "start_time" in filters:
+        if start_time is not None:
             time_clause += " AND p.created_at >= %(start_time)s"
-        if "end_time" in filters:
+        if end_time is not None:
             time_clause += " AND p.created_at < %(end_time)s"
 
         # ------------------------------------------------------
@@ -84,10 +87,11 @@ class BipartiteNetworkBuilder(NetworkBuilder):
                 f"Bipartite network not implemented for left='{left}', right='{right}'"
             )
 
-        # Add time params if present
-        for k in ("start_time", "end_time"):
-            if k in filters:
-                params[k] = filters[k]
+        # Only add time params if they are not None
+        if start_time is not None:
+            params["start_time"] = start_time
+        if end_time is not None:
+            params["end_time"] = end_time
 
         return sql, params
 

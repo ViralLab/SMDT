@@ -7,7 +7,6 @@ from smdt.store.standard_db import StandardDB
 from .specs import NetworkSpec
 from .types import NetworkResult
 
-from rich import print
 
 class NetworkBuilder(ABC):
     """
