@@ -28,12 +28,23 @@ def iter_edge_chunks(
     sql, params = builder._edge_query()
 
     with builder.db.connect() as conn:
-        for chunk in pd.read_sql_query(
-            sql,
-            conn,
-            params=params,
-            chunksize=chunksize,
-        ):
-            if chunk.empty:
-                continue
-            yield chunk
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+
+            # Column names from cursor description
+            desc = cur.description
+            if not desc:
+                return  # no results at all
+
+            colnames = [c[0] for c in desc]
+
+            while True:
+                rows = cur.fetchmany(chunksize)
+                if not rows:
+                    break
+
+                chunk = pd.DataFrame(rows, columns=colnames)
+                if chunk.empty:
+                    continue
+
+                yield chunk
