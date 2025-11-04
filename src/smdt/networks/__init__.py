@@ -5,6 +5,8 @@ from .api import (
     entity_cooccurrence,
     bipartite,
     iter_bipartite_edges,
+    coaction,
+    iter_coaction_edges,
 )
 from .converters import to_networkx
 
@@ -16,4 +18,6 @@ __all__ = [
     "bipartite",
     "iter_bipartite_edges",
     "to_networkx",
+    "coaction",
+    "iter_coaction_edges",
 ]

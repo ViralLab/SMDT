@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional, Iterator
+from typing import Literal, Optional, Iterator, Dict, Any
 import pandas as pd
 
 from smdt.store.standard_db import StandardDB
@@ -10,6 +10,7 @@ from .builders import (
     UserInteractionNetworkBuilder,
     EntityCooccurrenceNetworkBuilder,
     BipartiteNetworkBuilder,
+    CoActionNetworkBuilder,
 )
 
 # ---------------------------------------------------------------------
@@ -249,4 +250,51 @@ def iter_bipartite_edges(
     )
 
     builder = BipartiteNetworkBuilder(db, spec)
+    return iter_edge_chunks(builder, chunksize=chunksize)
+
+
+def coaction(
+    db,
+    action: str,
+    *,
+    start_time=None,
+    end_time=None,
+    weighting="count",
+    directed=False,
+) -> NetworkResult:
+    filters: Dict[str, Any] = {}
+    if start_time is not None:
+        filters["start_time"] = start_time
+    if end_time is not None:
+        filters["end_time"] = end_time
+
+    spec = NetworkSpec(
+        name=f"co_{action.lower()}_network",
+        node_type="account",
+        edge_kind=action.upper(),
+        directed=directed,
+        weighting=weighting,
+        filters=filters,
+    )
+    builder = CoActionNetworkBuilder(db, spec)
+    return builder.build()
+
+
+def iter_coaction_edges(
+    db, action: str, *, start_time=None, end_time=None, chunksize=100_000
+):
+    filters = {}
+    if start_time is not None:
+        filters["start_time"] = start_time
+    if end_time is not None:
+        filters["end_time"] = end_time
+
+    spec = NetworkSpec(
+        name=f"co_{action.lower()}_network",
+        node_type="account",
+        edge_kind=action.upper(),
+        directed=False,
+        filters=filters,
+    )
+    builder = CoActionNetworkBuilder(db, spec)
     return iter_edge_chunks(builder, chunksize=chunksize)
