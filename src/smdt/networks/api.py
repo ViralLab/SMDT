@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Literal, Optional, Iterator, Dict, Any
+from datetime import datetime, timedelta
+from typing import Literal, Optional, Iterator, Dict, Any, Tuple, List
 import pandas as pd
 
 from smdt.store.standard_db import StandardDB
@@ -298,3 +298,271 @@ def iter_coaction_edges(
     )
     builder = CoActionNetworkBuilder(db, spec)
     return iter_edge_chunks(builder, chunksize=chunksize)
+
+
+# -------------------------------------------------------------------
+# Internal helper: iterate fixed-size time windows
+# -------------------------------------------------------------------
+
+
+def _iter_time_windows(
+    start_time: datetime,
+    end_time: datetime,
+    step: timedelta,
+):
+    """
+    Yield half-open time windows [t_i, t_{i+1}) from start_time to end_time.
+
+    Example:
+        for ws, we in _iter_time_windows(t0, t1, timedelta(hours=1)):
+            ...
+    """
+    current = start_time
+    while current < end_time:
+        nxt = min(current + step, end_time)
+        yield current, nxt
+        current = nxt
+
+
+# -------------------------------------------------------------------
+# Temporal variants: networks over time windows
+# -------------------------------------------------------------------
+
+
+def user_interaction_over_time(
+    db,
+    interaction: str,
+    *,
+    start_time: datetime,
+    end_time: datetime,
+    step: timedelta,
+    weighting: str = "count",
+    min_weight: int = 1,
+) -> List[Dict[str, Any]]:
+    """
+    Build a sequence of user–user interaction networks over fixed time windows.
+
+    Parameters
+    ----------
+    db
+        StandardDB instance.
+    interaction
+        Action type (e.g. "QUOTE", "COMMENT", "SHARE", "FOLLOW").
+    start_time, end_time
+        Overall time range for slicing.
+    step
+        Window size as a datetime.timedelta (e.g. timedelta(hours=1)).
+    weighting
+        Passed through to user_interaction().
+    min_weight
+        Passed through to user_interaction().
+
+    Returns
+    -------
+    List[dict]
+        Each element has keys:
+          - "window_start": datetime
+          - "window_end": datetime
+          - "network": NetworkResult
+    """
+    results: List[Dict[str, Any]] = []
+
+    for ws, we in _iter_time_windows(start_time, end_time, step):
+        net = user_interaction(
+            db,
+            interaction=interaction,
+            start_time=ws,
+            end_time=we,
+            weighting=weighting,
+            min_weight=min_weight,
+        )
+        results.append(
+            {
+                "window_start": ws,
+                "window_end": we,
+                "network": net,
+            }
+        )
+
+    return results
+
+
+def entity_cooccurrence_over_time(
+    db,
+    entity_type: str,
+    *,
+    start_time: datetime,
+    end_time: datetime,
+    step: timedelta,
+    weighting: str = "count",
+    min_weight: int = 1,
+) -> List[Dict[str, Any]]:
+    """
+    Build a sequence of entity–entity co-occurrence networks over fixed time windows.
+
+    Parameters
+    ----------
+    db
+        StandardDB instance.
+    entity_type
+        Entity type, e.g. "HASHTAG", "USER_TAG", "LINK".
+    start_time, end_time
+        Overall time range for slicing.
+    step
+        Window size as a datetime.timedelta (e.g. timedelta(hours=1)).
+    weighting
+        Passed through to entity_cooccurrence().
+    min_weight
+        Passed through to entity_cooccurrence().
+
+    Returns
+    -------
+    List[dict]
+        Each element has keys:
+          - "window_start": datetime
+          - "window_end": datetime
+          - "network": NetworkResult
+    """
+    results: List[Dict[str, Any]] = []
+
+    for ws, we in _iter_time_windows(start_time, end_time, step):
+        net = entity_cooccurrence(
+            db,
+            entity_type=entity_type,
+            start_time=ws,
+            end_time=we,
+            weighting=weighting,
+            min_weight=min_weight,
+        )
+        results.append(
+            {
+                "window_start": ws,
+                "window_end": we,
+                "network": net,
+            }
+        )
+
+    return results
+
+
+def bipartite_over_time(
+    db,
+    left: str,
+    right: str,
+    *,
+    start_time: datetime,
+    end_time: datetime,
+    step: timedelta,
+    weighting: str = "count",
+) -> List[Dict[str, Any]]:
+    """
+    Build a sequence of bipartite networks over fixed time windows.
+
+    Parameters
+    ----------
+    db
+        StandardDB instance.
+    left
+        Left node type (e.g. "account", "post").
+    right
+        Right node type (e.g.  'HASHTAG', 'USER_TAG','LINK','EMAIL','IMAGE','VIDEO').
+    start_time, end_time
+        Overall time range for slicing.
+    step
+        Window size as a datetime.timedelta (e.g. timedelta(hours=1)).
+    weighting
+        Passed through to bipartite().
+
+    Returns
+    -------
+    List[dict]
+        Each element has keys:
+          - "window_start": datetime
+          - "window_end": datetime
+          - "network": NetworkResult
+    """
+    results: List[Dict[str, Any]] = []
+
+    for ws, we in _iter_time_windows(start_time, end_time, step):
+        net = bipartite(
+            db,
+            left=left,
+            right=right,
+            start_time=ws,
+            end_time=we,
+            weighting=weighting,
+        )
+        results.append(
+            {
+                "window_start": ws,
+                "window_end": we,
+                "network": net,
+            }
+        )
+
+    return results
+
+
+def coaction_over_time(
+    db,
+    action: str,
+    *,
+    start_time: datetime,
+    end_time: datetime,
+    step: timedelta,
+    weighting: str = "count",
+    min_weight: int = 1,
+) -> List[Dict[str, Any]]:
+    """
+    Build a sequence of user–user co-action networks over fixed time windows.
+
+    Co-action networks connect users who both performed the same action
+    (e.g., COMMENT, SHARE, QUOTE) on the same target_post_id.
+
+    Parameters
+    ----------
+    db
+        StandardDB instance.
+    action
+        Action type, e.g. "COMMENT", "SHARE", "QUOTE".
+    start_time, end_time
+        Overall time range for slicing.
+    step
+        Window size as a datetime.timedelta (e.g. timedelta(hours=1)).
+    weighting
+        Passed through to coaction().
+    min_weight
+        Minimum edge weight to keep per window (applied after building).
+
+    Returns
+    -------
+    List[dict]
+        Each element has keys:
+          - "window_start": datetime
+          - "window_end": datetime
+          - "network": NetworkResult
+    """
+    results: List[Dict[str, Any]] = []
+
+    for ws, we in _iter_time_windows(start_time, end_time, step):
+        net = coaction(
+            db,
+            action=action,
+            start_time=ws,
+            end_time=we,
+            weighting=weighting,
+        )
+
+        # Optional edge filtering by weight
+        if min_weight is not None and not net.edges.empty:
+            net.edges = net.edges[net.edges["weight"] >= min_weight]
+
+        results.append(
+            {
+                "window_start": ws,
+                "window_end": we,
+                "network": net,
+            }
+        )
+
+    return results

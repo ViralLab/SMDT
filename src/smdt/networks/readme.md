@@ -223,3 +223,44 @@ print(f"Found {len(communities)} communities")
 - Unified API for **interaction**, **co-occurrence**, and **bipartite** networks.  
 - Integrates cleanly with pandas, Parquet, and NetworkX.  
 - Designed for large-scale computational social science pipelines.
+
+---
+
+## ⏱ Temporal Network Slices
+
+In addition to building a single network over a time range, the `networks` module
+can construct **sequences of networks over fixed time windows**. This is useful for
+studying how structure and activity evolve over time.
+
+Each function returns a list of dictionaries with:
+
+- `window_start`: beginning of the time window
+- `window_end`: end of the time window
+- `network`: a `NetworkResult` for that slice
+
+### 1. User–User Interaction Over Time
+
+```python
+from datetime import datetime, timedelta
+from smdt.store.standard_db import StandardDB
+from smdt import networks
+
+db = StandardDB("smdt_twitter_v2_election")
+
+# Build hourly QUOTE networks over a 1-day period
+windows = networks.user_interaction_over_time(
+    db,
+    interaction="QUOTE",
+    start_time=datetime(2023, 5, 14),
+    end_time=datetime(2023, 5, 15),
+    step=timedelta(hours=1),
+    weighting="count",
+    min_weight=3,
+)
+
+for win in windows:
+    ws = win["window_start"]
+    we = win["window_end"]
+    net = win["network"]
+    print(ws, we, net.meta["edge_count"])
+```
