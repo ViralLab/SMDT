@@ -78,16 +78,36 @@ class StandardDB:
     def connect(self) -> psycopg.Connection:
         appname = getattr(self.cfg, "application_name", "standarddb")
         options = f"-c application_name={appname!s}"
-        return psycopg.connect(
-            dbname=self.db_name or self._maintenance_db(),
-            user=self.cfg.user,
-            password=self.cfg.password,
-            host=self.cfg.host,
-            port=self.cfg.port,
-            options=options,
-            connect_timeout=getattr(self.cfg, "connect_timeout", 10),
-        )
-
+        try:
+            return psycopg.connect(
+                dbname=self.db_name,
+                user=self.cfg.user,
+                password=self.cfg.password,
+                host=self.cfg.host,
+                port=self.cfg.port,
+                options=options,
+                connect_timeout=getattr(self.cfg, "connect_timeout", 10),
+            )
+        except psycopg.OperationalError as e:
+            try:
+                return psycopg.connect(
+                    dbname=self._maintenance_db(),
+                    user=self.cfg.user,
+                    password=self.cfg.password,
+                    host=self.cfg.host,
+                    port=self.cfg.port,
+                    options=options,
+                    connect_timeout=getattr(self.cfg, "connect_timeout", 10),
+                )
+            except Exception as e:
+                log.error(
+                    "Failed to connect to maintenance DB %s to check/create %s: %s",
+                    self._maintenance_db(),
+                    self.db_name,
+                    e,
+                )
+                raise
+                
     # ---------------- Introspection ----------------
 
     def _db_exists(self, cur, name: str) -> bool:
