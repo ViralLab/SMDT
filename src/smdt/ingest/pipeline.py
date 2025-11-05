@@ -233,7 +233,11 @@ def run_pipeline(
                 ):
                     try:
                         sub_result = standardizer.standardize((record, src))
-                        _add_models_to_buffers(sub_result)
+                        if sub_result is not None:
+                            _add_models_to_buffers(sub_result)
+                        else:
+                            print(record, src)
+                            raise ValueError("No models returned from standardizer")
 
                         # Flush overgrown class buffers
                         for cls in list(buffers.keys()):
