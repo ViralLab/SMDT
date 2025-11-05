@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import re
 
 from colorama import Fore, Style, init as colorama_init
@@ -26,6 +26,8 @@ class TableStat:
 
     est_rows: int
     columns: Dict[str, ColStat]  # col_name -> ColStat
+    # Optional extra payload for table-specific stats (e.g., actions links per action_type)
+    extra: Optional[Dict[str, Any]] = None
 
 
 # =============================================================
@@ -157,6 +159,8 @@ class Inspector:
 
                     cstats: Dict[str, ColStat] = {}
                     total = 0
+                    extra: Optional[Dict[str, Any]] = None
+
                     if cols:
                         parts = ["COUNT(*) AS total"]
                         for col, *_ in cols:
@@ -181,9 +185,14 @@ class Inspector:
                                     cur, tname, col, total, limit=self.max_enum_items
                                 )
 
+                        # Table-specific extras: actions link stats per action_type
+                        if _norm_tbl_name(tname) == "actions":
+                            extra = self._actions_link_stats(cur, tname)
+
                     out[tname] = TableStat(
                         est_rows=int(total if total > 0 else (est_rows or -1)),
                         columns=cstats,
+                        extra=extra,
                     )
 
                 if allow:
@@ -239,6 +248,72 @@ class Inspector:
             top.append(("other", other, other / total_rows))
         return top
 
+    # -------- actions-specific helper --------------------------------
+    def _actions_link_stats(self, cur, table: str) -> Dict[str, Any]:
+        """
+        For the actions table, compute per-action_type completeness of:
+        target_account_id, target_post_id, originator_account_id, originator_post_id.
+        """
+        cur.execute(
+            f"""
+            SELECT
+                action_type::text AS action_type,
+                COUNT(*) AS total,
+                COUNT(target_account_id)      AS nn_target_account_id,
+                COUNT(target_post_id)         AS nn_target_post_id,
+                COUNT(originator_account_id)  AS nn_originator_account_id,
+                COUNT(originator_post_id)     AS nn_originator_post_id
+            FROM {psql_ident_full(self.schema, table)}
+            GROUP BY 1
+            ORDER BY 1
+            """
+        )
+        rows = cur.fetchall()
+        per_type: List[Dict[str, Any]] = []
+        for (
+            action_type,
+            total,
+            nn_tacc,
+            nn_tpost,
+            nn_oacc,
+            nn_opost,
+        ) in rows:
+            total = int(total or 0)
+
+            def _pct(nn: int) -> Optional[float]:
+                return None if total == 0 else nn / total
+
+            nn_tacc = int(nn_tacc or 0)
+            nn_tpost = int(nn_tpost or 0)
+            nn_oacc = int(nn_oacc or 0)
+            nn_opost = int(nn_opost or 0)
+
+            per_type.append(
+                {
+                    "action_type": action_type,
+                    "total": total,
+                    "nn": {
+                        "target_account_id": nn_tacc,
+                        "target_post_id": nn_tpost,
+                        "originator_account_id": nn_oacc,
+                        "originator_post_id": nn_opost,
+                    },
+                    "pct": {
+                        "target_account_id": _pct(nn_tacc),
+                        "target_post_id": _pct(nn_tpost),
+                        "originator_account_id": _pct(nn_oacc),
+                        "originator_post_id": _pct(nn_opost),
+                    },
+                }
+            )
+
+        return {"actions_links_per_type": per_type}
+
+
+# =============================================================
+# Reporting
+# =============================================================
+
 
 def report_schemas(
     inspectors: List["Inspector"],
@@ -282,6 +357,14 @@ def report_schemas(
     else:
         all_tables = sorted({t for snap in snaps for t in snap.keys()})
 
+    # Columns of interest for per-action-type completeness (actions table only)
+    ACTION_ID_COLS = [
+        "target_account_id",
+        "target_post_id",
+        "originator_account_id",
+        "originator_post_id",
+    ]
+
     # -------- Small helpers (rendering) --------
     def _enum_cell(cnt: Optional[int], pct: Optional[float]) -> str:
         """(count) pct — used for enum rows."""
@@ -302,6 +385,26 @@ def report_schemas(
             return _dim("—")
         pct_s = _color_pct(pct)
         return f"{_dim(f'({nn:,}/{total:,})')} {pct_s}"
+
+    def _all_action_types_for_table(tname: str) -> List[str]:
+        """Union of action_type values across inspectors for this table (if actions)."""
+        if _norm_tbl_name(tname) != "actions":
+            return []
+        seen: List[str] = []
+        seen_set = set()
+        for snap in snaps:
+            st = snap.get(tname)
+            if not st or not isinstance(st.extra, dict):
+                continue
+            per_type = st.extra.get("actions_links_per_type")
+            if not per_type:
+                continue
+            for row in per_type:
+                at = str(row.get("action_type"))
+                if at not in seen_set:
+                    seen.append(at)
+                    seen_set.add(at)
+        return seen
 
     for tname in all_tables:
         print()
@@ -348,12 +451,19 @@ def report_schemas(
                 seen_vals = [v for v in seen_vals if v != "other"] + ["other"]
             return seen_vals
 
-        # Ensure left width fits any "↳ value"
+        # Ensure left width fits any "↳ value" (enum + per-action-type)
         for col in all_cols:
             for v in _enum_values_for(col):
-                left_w = max(left_w, _vislen(f"↳ {v}"))
+                left_w = max(left_w, _vislen(f"{Fore.CYAN}↳ {v}{Style.RESET_ALL}"))
 
-        # -------- Per-DB widths for THIS table (fit headers, completeness, and enum rows) --------
+        # Also accommodate per-action-type labels (actions id columns)
+        if _norm_tbl_name(tname) == "actions":
+            for at in _all_action_types_for_table(tname):
+                left_w = max(
+                    left_w, _vislen(f"{Fore.CYAN}↳ action_type={at}{Style.RESET_ALL}")
+                )
+
+        # -------- Per-DB widths for THIS table (fit headers, completeness, enum, and actions rows) --------
         db_cell_w = [max(_vislen(lbl), 6) for lbl in labels]
         for idx, snap in enumerate(snaps):
             widest = db_cell_w[idx]
@@ -382,6 +492,26 @@ def report_schemas(
                         for _v, c, p in cstat.enum_counts:
                             widest = max(widest, _vislen(_enum_cell(c, p)))
 
+                    # actions per-action-type completeness for id cols
+                    if (
+                        _norm_tbl_name(tname) == "actions"
+                        and col in ACTION_ID_COLS
+                        and isinstance(st.extra, Dict)
+                    ):
+                        per_type = st.extra.get("actions_links_per_type")
+                        if per_type:
+                            by_type = {str(r["action_type"]): r for r in per_type}
+                            for at in _all_action_types_for_table(tname):
+                                r = by_type.get(at)
+                                if not r:
+                                    cell = _dim("—")
+                                else:
+                                    total_at = r["total"]
+                                    nn_at = r["nn"].get(col, 0)
+                                    pct_at = r["pct"].get(col)
+                                    cell = _comp_cell(nn_at, total_at, pct_at)
+                                widest = max(widest, _vislen(cell))
+
             db_cell_w[idx] = widest
 
         # Header
@@ -398,7 +528,7 @@ def report_schemas(
         )
         print("-" * sep_len)
 
-        # -------- Rows: completeness first, then enum sub-rows --------
+        # -------- Rows: completeness first, then enum sub-rows, then actions-per-type for id columns --------
         for col in all_cols:
             dtype = _dtype_for(col)
             left_cell = _rpad_ansi(f"{col} : {dtype}", left_w)
@@ -432,23 +562,55 @@ def report_schemas(
                     else None
                 )
 
-            if not any(enum_lists):
-                continue
+            if any(enum_lists):
+                ordered_vals = _enum_values_for(col)
+                for v in ordered_vals:
+                    left_val = _rpad_ansi(f"{Fore.CYAN}↳ {v}{Style.RESET_ALL}", left_w)
+                    cells = []
+                    for lst, w in zip(enum_lists, db_cell_w):
+                        if not lst:
+                            cells.append(_rpad_ansi(_dim("—"), w))
+                            continue
+                        cnt, pct = None, None
+                        for vv, c, p in lst:
+                            if vv == v:
+                                cnt, pct = c, p
+                                break
+                        cells.append(_lpad_ansi(_enum_cell(cnt, pct), w))
+                    print(f"{left_val} | " + " | ".join(cells))
 
-            ordered_vals = _enum_values_for(col)
-            for v in ordered_vals:
-                left_val = _rpad_ansi(f"↳ {v}", left_w)
-                cells = []
-                for lst, w in zip(enum_lists, db_cell_w):
-                    if not lst:
-                        cells.append(_rpad_ansi(_dim("—"), w))
-                        continue
-                    cnt, pct = None, None
-                    for vv, c, p in lst:
-                        if vv == v:
-                            cnt, pct = c, p
-                            break
-                    cells.append(_lpad_ansi(_enum_cell(cnt, pct), w))
-                print(f"{left_val} | " + " | ".join(cells))
+            # actions-per-action_type rows for the four id columns
+            if _norm_tbl_name(tname) == "actions" and col in ACTION_ID_COLS:
+                ordered_types = _all_action_types_for_table(tname)
+                if ordered_types:
+                    for at in ordered_types:
+                        left_val = _rpad_ansi(
+                            f"{Fore.YELLOW}↳ action_type={at}{Style.RESET_ALL}", left_w
+                        )
+                        cells = []
+                        for snap, w in zip(snaps, db_cell_w):
+                            st = snap.get(tname)
+                            if not st or not isinstance(st.extra, dict):
+                                cells.append(_rpad_ansi(_dim("—"), w))
+                                continue
+                            per_type = st.extra.get("actions_links_per_type")
+                            if not per_type:
+                                cells.append(_rpad_ansi(_dim("—"), w))
+                                continue
+                            by_type = {str(r["action_type"]): r for r in per_type}
+                            r = by_type.get(at)
+                            if not r:
+                                cells.append(_rpad_ansi(_dim("—"), w))
+                                continue
+                            total_at = r["total"]
+                            nn_at = r["nn"].get(col, 0)
+                            pct_at = r["pct"].get(col)
+                            cells.append(
+                                _lpad_ansi(
+                                    _comp_cell(nn_at, total_at, pct_at),
+                                    w,
+                                )
+                            )
+                        print(f"{left_val} | " + " | ".join(cells))
 
         print("-" * sep_len)
