@@ -357,17 +357,15 @@ def report_schemas(
     else:
         all_tables = sorted({t for snap in snaps for t in snap.keys()})
 
-    # Columns of interest for per-action-type completeness (actions table only)
     ACTION_ID_COLS = [
-        "target_account_id",
-        "target_post_id",
         "originator_account_id",
         "originator_post_id",
+        "target_account_id",
+        "target_post_id",
     ]
 
     # -------- Small helpers (rendering) --------
     def _enum_cell(cnt: Optional[int], pct: Optional[float]) -> str:
-        """(count) pct — used for enum rows."""
         if pct is None:
             return _dim("—")
         pct_s = _color_pct(pct)
@@ -380,31 +378,27 @@ def report_schemas(
     def _comp_cell(
         nn: Optional[int], total: Optional[int], pct: Optional[float]
     ) -> str:
-        """(nn/total) pct — used for completeness rows."""
         if pct is None or nn is None or total is None:
             return _dim("—")
         pct_s = _color_pct(pct)
         return f"{_dim(f'({nn:,}/{total:,})')} {pct_s}"
 
     def _all_action_types_for_table(tname: str) -> List[str]:
-        """Union of action_type values across inspectors for this table (if actions)."""
         if _norm_tbl_name(tname) != "actions":
             return []
-        seen: List[str] = []
-        seen_set = set()
+        seen_list: List[str] = []
+        seen = set()
         for snap in snaps:
             st = snap.get(tname)
             if not st or not isinstance(st.extra, dict):
                 continue
-            per_type = st.extra.get("actions_links_per_type")
-            if not per_type:
-                continue
+            per_type = st.extra.get("actions_links_per_type") or []
             for row in per_type:
                 at = str(row.get("action_type"))
-                if at not in seen_set:
-                    seen.append(at)
-                    seen_set.add(at)
-        return seen
+                if at not in seen:
+                    seen.add(at)
+                    seen_list.append(at)
+        return seen_list
 
     for tname in all_tables:
         print()
@@ -426,7 +420,7 @@ def report_schemas(
                     return st.columns[col].data_type
             return "—"
 
-        # Left column width (column / type + accommodate enum value names)
+        # Left column width (column / type + subrows)
         left_texts = [f"{col} : {_dtype_for(col)}" for col in all_cols] or [
             "column / type"
         ]
@@ -451,19 +445,19 @@ def report_schemas(
                 seen_vals = [v for v in seen_vals if v != "other"] + ["other"]
             return seen_vals
 
-        # Ensure left width fits any "↳ value" (enum + per-action-type)
+        # enum value labels
         for col in all_cols:
             for v in _enum_values_for(col):
-                left_w = max(left_w, _vislen(f"{Fore.CYAN}↳ {v}{Style.RESET_ALL}"))
+                left_w = max(left_w, _vislen(f"↳ {v}"))
 
-        # Also accommodate per-action-type labels (actions id columns)
+        # actions-specific labels under action_type
         if _norm_tbl_name(tname) == "actions":
             for at in _all_action_types_for_table(tname):
-                left_w = max(
-                    left_w, _vislen(f"{Fore.CYAN}↳ action_type={at}{Style.RESET_ALL}")
-                )
+                left_w = max(left_w, _vislen(f"{at}"))
+                for id_col in ACTION_ID_COLS:
+                    left_w = max(left_w, _vislen(f"↳ {id_col}"))
 
-        # -------- Per-DB widths for THIS table (fit headers, completeness, enum, and actions rows) --------
+        # -------- Per-DB widths for THIS table --------
         db_cell_w = [max(_vislen(lbl), 6) for lbl in labels]
         for idx, snap in enumerate(snaps):
             widest = db_cell_w[idx]
@@ -475,8 +469,6 @@ def report_schemas(
                     if col not in st.columns:
                         continue
                     cstat = st.columns[col]
-
-                    # completeness with counts
                     total = st.est_rows if st.est_rows and st.est_rows > 0 else None
                     nn = (
                         int(total * cstat.completeness)
@@ -487,30 +479,25 @@ def report_schemas(
                         widest, _vislen(_comp_cell(nn, total, cstat.completeness))
                     )
 
-                    # enum rows
                     if cstat.enum_counts:
                         for _v, c, p in cstat.enum_counts:
                             widest = max(widest, _vislen(_enum_cell(c, p)))
 
-                    # actions per-action-type completeness for id cols
-                    if (
-                        _norm_tbl_name(tname) == "actions"
-                        and col in ACTION_ID_COLS
-                        and isinstance(st.extra, Dict)
-                    ):
-                        per_type = st.extra.get("actions_links_per_type")
-                        if per_type:
-                            by_type = {str(r["action_type"]): r for r in per_type}
-                            for at in _all_action_types_for_table(tname):
-                                r = by_type.get(at)
-                                if not r:
-                                    cell = _dim("—")
-                                else:
-                                    total_at = r["total"]
-                                    nn_at = r["nn"].get(col, 0)
-                                    pct_at = r["pct"].get(col)
-                                    cell = _comp_cell(nn_at, total_at, pct_at)
-                                widest = max(widest, _vislen(cell))
+                # actions: per-action-type link rows under action_type
+                if _norm_tbl_name(tname) == "actions" and isinstance(st.extra, dict):
+                    per_type = st.extra.get("actions_links_per_type") or []
+                    by_type = {str(r["action_type"]): r for r in per_type}
+                    for at in _all_action_types_for_table(tname):
+                        r = by_type.get(at)
+                        for id_col in ACTION_ID_COLS:
+                            if not r:
+                                cell = _dim("—")
+                            else:
+                                total_at = r["total"]
+                                nn_at = r["nn"].get(id_col, 0)
+                                pct_at = r["pct"].get(id_col)
+                                cell = _comp_cell(nn_at, total_at, pct_at)
+                            widest = max(widest, _vislen(cell))
 
             db_cell_w[idx] = widest
 
@@ -522,18 +509,18 @@ def report_schemas(
         )
         print(f"{hdr_left} | {hdr_right}")
 
-        # Separator line (exact printable length)
+        # Separator
         sep_len = (
             left_w + 3 + sum(db_cell_w) + 3 * (len(db_cell_w) - 1 if db_cell_w else 0)
         )
         print("-" * sep_len)
 
-        # -------- Rows: completeness first, then enum sub-rows, then actions-per-type for id columns --------
+        # -------- Rows --------
         for col in all_cols:
             dtype = _dtype_for(col)
             left_cell = _rpad_ansi(f"{col} : {dtype}", left_w)
 
-            # completeness row (nn/total + pct), right-aligned
+            # main completeness row
             cells = []
             for snap, w in zip(snaps, db_cell_w):
                 st = snap.get(tname)
@@ -552,7 +539,7 @@ def report_schemas(
                     )
             print(f"{left_cell} | " + " | ".join(cells))
 
-            # enum/domain sub-rows
+            # enum subrows
             enum_lists: List[Optional[List[Tuple[str, int, float]]]] = []
             for snap in snaps:
                 st = snap.get(tname)
@@ -565,7 +552,9 @@ def report_schemas(
             if any(enum_lists):
                 ordered_vals = _enum_values_for(col)
                 for v in ordered_vals:
-                    left_val = _rpad_ansi(f"{Fore.CYAN}↳ {v}{Style.RESET_ALL}", left_w)
+                    left_val = _rpad_ansi(
+                        f"{Fore.LIGHTYELLOW_EX}↳ {v}{Fore.RESET}", left_w
+                    )
                     cells = []
                     for lst, w in zip(enum_lists, db_cell_w):
                         if not lst:
@@ -579,38 +568,45 @@ def report_schemas(
                         cells.append(_lpad_ansi(_enum_cell(cnt, pct), w))
                     print(f"{left_val} | " + " | ".join(cells))
 
-            # actions-per-action_type rows for the four id columns
-            if _norm_tbl_name(tname) == "actions" and col in ACTION_ID_COLS:
+            # actions: per-action-type group under action_type
+            if (
+                _norm_tbl_name(tname) == "actions"
+                and _norm_tbl_name(col) == "action_type"
+            ):
                 ordered_types = _all_action_types_for_table(tname)
                 if ordered_types:
                     for at in ordered_types:
-                        left_val = _rpad_ansi(
-                            f"{Fore.YELLOW}↳ action_type={at}{Style.RESET_ALL}", left_w
-                        )
-                        cells = []
-                        for snap, w in zip(snaps, db_cell_w):
-                            st = snap.get(tname)
-                            if not st or not isinstance(st.extra, dict):
-                                cells.append(_rpad_ansi(_dim("—"), w))
-                                continue
-                            per_type = st.extra.get("actions_links_per_type")
-                            if not per_type:
-                                cells.append(_rpad_ansi(_dim("—"), w))
-                                continue
-                            by_type = {str(r["action_type"]): r for r in per_type}
-                            r = by_type.get(at)
-                            if not r:
-                                cells.append(_rpad_ansi(_dim("—"), w))
-                                continue
-                            total_at = r["total"]
-                            nn_at = r["nn"].get(col, 0)
-                            pct_at = r["pct"].get(col)
-                            cells.append(
-                                _lpad_ansi(
-                                    _comp_cell(nn_at, total_at, pct_at),
-                                    w,
-                                )
+                        # header row per action_type (empty stats)
+                        header_left = _rpad_ansi(f"{at}", left_w)
+                        header_cells = [_rpad_ansi(_dim("—"), w) for w in db_cell_w]
+                        print(f"{header_left} | " + " | ".join(header_cells))
+
+                        # subrows: link columns
+                        for id_col in ACTION_ID_COLS:
+                            left_val = _rpad_ansi(
+                                f"{Fore.LIGHTYELLOW_EX}↳ {id_col}{Fore.RESET}", left_w
                             )
-                        print(f"{left_val} | " + " | ".join(cells))
+                            cells = []
+                            for snap, w in zip(snaps, db_cell_w):
+                                st = snap.get(tname)
+                                if not st or not isinstance(st.extra, dict):
+                                    cells.append(_rpad_ansi(_dim("—"), w))
+                                    continue
+                                per_type = st.extra.get("actions_links_per_type") or []
+                                by_type = {str(r["action_type"]): r for r in per_type}
+                                r = by_type.get(at)
+                                if not r:
+                                    cells.append(_rpad_ansi(_dim("—"), w))
+                                    continue
+                                total_at = r["total"]
+                                nn_at = r["nn"].get(id_col, 0)
+                                pct_at = r["pct"].get(id_col)
+                                cells.append(
+                                    _lpad_ansi(
+                                        _comp_cell(nn_at, total_at, pct_at),
+                                        w,
+                                    )
+                                )
+                            print(f"{left_val} | " + " | ".join(cells))
 
         print("-" * sep_len)
