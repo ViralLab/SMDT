@@ -231,5 +231,12 @@ def print_plan(plan: Plan) -> None:
         for rn, count in sorted(s.items(), key=lambda kv: (-kv[1], kv[0])):
             color = GREEN if count > 0 else RED
             print(f"  {color}{rn:12s}{RESET} : {count}")
+
+        should_continue = input("Should I start ingestion? (y/n): ")
+        if should_continue.lower() != "y":
+            print("Ingestion cancelled by user.")
+            exit(0)
+        else:
+            print("Proceeding with ingestion...")
     else:
         print("\nNo processable files found.")
