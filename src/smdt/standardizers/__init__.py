@@ -7,6 +7,7 @@ from .twitter.twitter_USC import TwitterUSCStandardizer
 
 from .bluesky.bluesky_dataset import BlueSkyDatasetStandardizer
 from .bluesky.bluesky_api import BlueSkyAPIStandardizer
+from .bluesky.bluesky_api_with_car import BlueSkyAPICARStandardizer
 
 from .utils import (
     extract_emails,
@@ -25,6 +26,7 @@ __all__ = [
     "TruthSocialUSCStandardizer",
     "BlueSkyDatasetStandardizer",
     "BlueSkyAPIStandardizer",
+    "BlueSkyAPICARStandardizer",
     # Utility functions
     "extract_emails",
     "extract_hashtags",

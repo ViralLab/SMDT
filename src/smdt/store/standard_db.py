@@ -107,7 +107,7 @@ class StandardDB:
                     e,
                 )
                 raise
-                
+
     # ---------------- Introspection ----------------
 
     def _db_exists(self, cur, name: str) -> bool:
