@@ -5,6 +5,8 @@ import inspect
 from .base import Reader, MissingOptionalDependency
 from .utils import file_ext, open_for_reading, maybe_decompress
 
+from smdt.standardizers.row import Record
+
 
 class PandasCsvReader(Reader):
     name = "csv_pd"
@@ -65,15 +67,24 @@ class PandasCsvReader(Reader):
         self, f: BinaryIO, *, member_name: Optional[str], **kwargs: Any
     ) -> Iterable[Mapping[str, Any]]:
         pd = self._pd()
-        # chunksize = kwargs.pop("chunksize", 10_000)
         params = set(inspect.signature(pd.read_csv).parameters)
+        # Let caller override chunksize; default to 10_000
         chunksize = kwargs.pop("chunksize", 10_000)
         safe_kwargs = {k: v for k, v in kwargs.items() if k in params}
         safe_kwargs["chunksize"] = chunksize
 
         # Let caller pass sep='\t' for TSV, dtype, encoding, usecols, etc.
+        # pd.read_csv(..., chunksize=N) yields DataFrame chunks
         for chunk in pd.read_csv(f, **safe_kwargs):
-            for rec in chunk.to_dict(orient="records"):
+            # Build shared column metadata *once per chunk*
+            cols = list(chunk.columns)
+            index = {name: i for i, name in enumerate(cols)}
+
+            # Iterate rows as tuples instead of dicts
+            # Each `tup` is (col0_value, col1_value, ...)
+            for tup in chunk.itertuples(index=False, name=None):
+                # Record is a Mapping[str, Any], backed by (tup, index, cols)
+                rec = Record(tup, index, cols)
                 yield rec
 
 
