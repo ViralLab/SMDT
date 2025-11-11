@@ -54,7 +54,7 @@ class Actions:
         if ca.tzinfo is None or ca.tzinfo.utcoffset(ca) is None:
             object.__setattr__(self, "created_at", ca.replace(tzinfo=timezone.utc))
 
-        # CHECK constraint: one originator, one target
+        # CHECK constraint: one originator, one target and check they are not nan
         if not (self.originator_account_id or self.originator_post_id):
             raise ValueError(
                 "Either originator_account_id or originator_post_id must be provided"

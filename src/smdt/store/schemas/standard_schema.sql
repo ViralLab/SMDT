@@ -1,4 +1,4 @@
--- ========= Social Media Schema =========
+-- ========= Social Media Schema (Optimized) =========
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
@@ -121,21 +121,35 @@ SELECT add_dimension('actions',  'action_type', number_partitions => 8);
 
 -- Indexes
 -- accounts
-CREATE INDEX IF NOT EXISTS accounts_created_at_idx ON accounts (created_at DESC);
-CREATE INDEX IF NOT EXISTS accounts_acct_time_idx  ON accounts (account_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_acct_created_uk ON accounts (account_id, created_at);
 
+--- [REMOVED] accounts_created_at_idx ON accounts (created_at DESC);
+---    WHY: Redundant. The Primary Key (created_at, id) already provides this B-tree.
+
+--- [REMOVED] accounts_acct_time_idx ON accounts (account_id, created_at DESC);
+---    WHY: Redundant. The UNIQUE index 'accounts_acct_created_uk'
+---         covers the same columns and can be used for the reorder policy.
+
+
 -- posts
-CREATE INDEX IF NOT EXISTS posts_created_at_idx ON posts (created_at DESC);
 CREATE INDEX IF NOT EXISTS posts_acct_time_idx  ON posts (account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS posts_convo_idx      ON posts (conversation_id);
 CREATE INDEX IF NOT EXISTS posts_post_id_idx    ON posts (post_id);
 
+--- [REMOVED] posts_created_at_idx ON posts (created_at DESC);
+---    WHY: Redundant. The Primary Key (created_at, id) already provides this B-tree.
+
+
 -- entities
 CREATE INDEX IF NOT EXISTS entities_post_idx  ON entities (post_id);
-CREATE INDEX IF NOT EXISTS entities_type_idx  ON entities (entity_type);
-CREATE INDEX IF NOT EXISTS entities_time_idx  ON entities (created_at DESC);
 CREATE INDEX IF NOT EXISTS entities_acct_type_time_idx  ON entities (account_id, entity_type, created_at DESC);
+
+--- [REMOVED] entities_type_idx ON entities (entity_type);
+---    WHY: Redundant. Space partitioning on 'entity_type' is far more efficient.
+
+--- [REMOVED] entities_time_idx ON entities (created_at DESC);
+---    WHY: Redundant. The Primary Key (created_at, entity_type, id) already provides this B-tree.
+
 
 -- actions
 CREATE INDEX IF NOT EXISTS actions_type_time_idx   ON actions (action_type, created_at DESC);
@@ -167,7 +181,8 @@ SELECT add_compression_policy('entities', INTERVAL '7 days');
 SELECT add_compression_policy('actions',  INTERVAL '7 days');
 
 -- Reorder (scan locality)
-SELECT add_reorder_policy('accounts','accounts_acct_time_idx');
+--- [MODIFIED] Pointing reorder policy to the existing UNIQUE index
+SELECT add_reorder_policy('accounts','accounts_acct_created_uk');
 SELECT add_reorder_policy('posts',   'posts_acct_time_idx');
 SELECT add_reorder_policy('actions', 'actions_type_time_idx');
 SELECT add_reorder_policy('entities','entities_acct_type_time_idx');

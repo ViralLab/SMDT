@@ -4,7 +4,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple, List
 
 import psycopg
 from psycopg import errors, sql
@@ -539,12 +539,14 @@ class StandardDB:
         include_id: bool = False,
         on_conflict: Optional[str] = None,
         chunk_size: int = 5000,
+        allow_row_by_row: bool = True,
     ) -> None:
         """
-        Best-effort load:
-          1) COPY (fastest)
-          2) Multi-VALUES
-          3) Row-by-row with SAVEPOINT to isolate bad rows
+        Best-effort load using a "divide and conquer" fallback.
+          1) Try COPY on the *entire* batch (fastest path).
+          2) If COPY fails, call a recursive "divide and conquer"
+             insert that splits failing batches in half, isolating
+             bad rows efficiently.
         """
         if not items:
             return
@@ -561,45 +563,161 @@ class StandardDB:
         # Resolve columns once
         cols: Tuple[str, ...] = first.insert_columns(include_id=include_id)
 
-        # 1) COPY via temp chunks
+        # 1) Try the fastest path: _copy_via_temp
+        # This function (as written above) already uses the
+        # "COPY to TEMP -> INSERT...SELECT" pattern, which is what we want.
         try:
-            for i in range(0, len(items), chunk_size):
-                self._copy_via_temp(
-                    items[i : i + chunk_size],
-                    table_name=table_name,
-                    cols=cols,
-                    on_conflict=on_conflict,
-                    chunk_size=chunk_size,
-                    include_id=include_id,
-                )
-            return
+            self._copy_via_temp(
+                items,
+                table_name=table_name,
+                cols=cols,
+                on_conflict=on_conflict,
+                chunk_size=len(items),  # Not relevant, just for signature
+                include_id=include_id,
+            )
+            return  # SUCCESS!
         except Exception as e:
             log.warning(
-                "COPY failed on %s (%d rows). Falling back to VALUES. Error: %s",
+                "COPY failed for %s (%d rows). "
+                "Falling back to 'divide and conquer' insert. Error: %s",
                 table_name,
                 len(items),
-                e,
+                str(e).split("\n")[0],  # Log only first line
             )
 
-        # 2) Multi-VALUES
+        # 2) Fallback: Recursive "Divide and Conquer"
         try:
+            self._recursive_insert(
+                items=items,
+                table_name=table_name,
+                cols=cols,
+                meta=meta,
+                include_id=include_id,
+                on_conflict=on_conflict,
+                chunk_size_for_multi_values=chunk_size,
+                allow_row_by_row=allow_row_by_row,
+            )
+        except Exception as e:
+            log.critical(
+                "The recursive 'divide and conquer' insert failed fatally for %s. "
+                "This should not happen. Error: %s",
+                table_name,
+                e,
+                exc_info=True,
+            )
+            raise
+
+    # --- [NEW] - This is the "divide and conquer" helper function ---
+    def _recursive_insert(
+        self,
+        items: Sequence[Any],
+        *,
+        table_name: str,
+        cols: Tuple[str, ...],
+        meta: dict,
+        include_id: bool,
+        on_conflict: Optional[str],
+        chunk_size_for_multi_values: int,
+        allow_row_by_row: bool,
+    ) -> None:
+        """
+        Helper for insert_with_fallbacks. Tries to insert a batch,
+        and splits it in half if it fails.
+        """
+        if not items:
+            return
+
+        try:
+            # Try to insert the *current* batch (which could be 10k, 5k, 2.5k...)
             self.bulk_insert_multi_values(
                 items,
                 include_id=include_id,
                 on_conflict=on_conflict,
-                chunk_size=chunk_size,
+                chunk_size=chunk_size_for_multi_values,
             )
-            return
         except Exception as e:
-            log.warning(
-                "VALUES bulk insert failed on %s. Falling back to row-by-row. Error: %s",
-                table_name,
-                e,
-            )
+            # The batch failed.
+            if len(items) > 1:
+                # More than one item, so we can split and recurse.
+                mid = len(items) // 2
+                log.warning(
+                    "Multi-VALUES failed on %d items for %s. "
+                    "Splitting to %d and %d. Error: %s",
+                    len(items),
+                    table_name,
+                    mid,
+                    len(items) - mid,
+                    str(e).split("\n")[0],
+                )
 
-        # 3) Row-by-row with SAVEPOINT and NUL scrubbing
-        bad = 0
-        ok = 0
+                # Recurse on first half
+                self._recursive_insert(
+                    items=items[:mid],
+                    table_name=table_name,
+                    cols=cols,
+                    meta=meta,
+                    include_id=include_id,
+                    on_conflict=on_conflict,
+                    chunk_size_for_multi_values=chunk_size_for_multi_values,
+                    allow_row_by_row=allow_row_by_row,
+                )
+
+                # Recurse on second half
+                self._recursive_insert(
+                    items=items[mid:],
+                    table_name=table_name,
+                    cols=cols,
+                    meta=meta,
+                    include_id=include_id,
+                    on_conflict=on_conflict,
+                    chunk_size_for_multi_values=chunk_size_for_multi_values,
+                    allow_row_by_row=allow_row_by_row,
+                )
+
+            elif len(items) == 1:
+                # This is the single, isolated bad row.
+                # We now do the *final* fallback.
+                if allow_row_by_row:
+                    log.warning(
+                        "Isolated 1 bad row for %s. Attempting final "
+                        "SAVEPOINT insert. Error: %s",
+                        table_name,
+                        str(e).split("\n")[0],
+                    )
+                    self._insert_single_row_with_savepoint(
+                        items[0],
+                        table_name=table_name,
+                        cols=cols,
+                        meta=meta,
+                        include_id=include_id,
+                        on_conflict=on_conflict,
+                    )
+                else:
+                    # Final fallback is disabled, so we just log and drop.
+                    log.error(
+                        "Isolated 1 bad row for %s, but row-by-row "
+                        "fallback is disabled. Row is being DROPPED. Error: %s. Payload: %r",
+                        table_name,
+                        str(e).split("\n")[0],
+                        items[0],
+                    )
+
+    def _insert_single_row_with_savepoint(
+        self,
+        item: Any,
+        *,
+        table_name: str,
+        cols: Tuple[str, ...],
+        meta: dict,
+        include_id: bool,
+        on_conflict: Optional[str],
+    ) -> None:
+        """
+        This is the *absolute last resort* fallback.
+        It runs the original "Step 3" logic from the old
+        insert_with_fallbacks, but only on a
+        *single item* that has already been isolated.
+        """
         conn = self.connect()
         _maybe_set_search_path(conn, getattr(self.cfg, "owner", None))
         try:
@@ -622,7 +740,7 @@ class StandardDB:
 
             jsonb_fields = set(
                 meta.get("jsonb_fields")
-                or getattr(model_cls, "__jsonb_fields__", set())
+                or getattr(type(item), "__jsonb_fields__", set())
             )
             jsonb_idx = [i for i, c in enumerate(cols) if c in jsonb_fields]
 
@@ -637,39 +755,30 @@ class StandardDB:
                 return tuple(vals)
 
             with conn.cursor() as cur:
-                for idx, e in enumerate(items):
-                    row = adapt_row(e)
-                    cur.execute("SAVEPOINT sp")
+                row = adapt_row(item)
+                cur.execute("SAVEPOINT sp")
+                try:
+                    cur.execute(base, row)
+                    cur.execute("RELEASE SAVEPOINT sp")
+                except Exception as ex:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp")
                     try:
-                        cur.execute(base, row)
-                        cur.execute("RELEASE SAVEPOINT sp")
-                        ok += 1
-                    except Exception as ex:
-                        cur.execute("ROLLBACK TO SAVEPOINT sp")
-                        bad += 1
-                        try:
-                            preview = getattr(e, "insert_values")(include_id)
-                        except Exception:
-                            preview = "<unpreviewable>"
-                        log.error(
-                            "Row %d failed for %s: %s | payload=%r",
-                            idx,
-                            table_name,
-                            ex,
-                            preview,
-                        )
+                        preview = getattr(item, "insert_values")(include_id)
+                    except Exception:
+                        preview = "<unpreviewable>"
+                    log.error(
+                        "FINAL FALLBACK: Row failed for %s: %s | payload=%r",
+                        table_name,
+                        ex,
+                        preview,
+                    )
 
             conn.commit()
-            log.warning(
-                "Row-by-row finished for %s: inserted=%d, failed=%d",
-                table_name,
-                ok,
-                bad,
-            )
         except Exception as e:
             conn.rollback()
-            log.error("Row-by-row fallback also failed on %s: %s", table_name, e)
-            raise
+            log.error(
+                "Final fallback SAVEPOINT logic also failed on %s: %s", table_name, e
+            )
         finally:
             conn.close()
 
@@ -707,9 +816,6 @@ class StandardDB:
 
         col_list = sql.SQL(", ").join(sql.Identifier(c) for c in cols)
         csv_null = ""  # empty string => NULL
-        copy_stmt = sql.SQL(
-            "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, NULL {})"
-        ).format(_ident(table_name), col_list, sql.Literal(csv_null))
 
         tmp_name = f"tmp_{table_name}_{int(time.time())}_{id(items) % 10000}"
 
@@ -718,17 +824,36 @@ class StandardDB:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
+                    sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING ALL)").format(
                         _ident(tmp_name), _ident(table_name)
                     )
                 )
 
-                with cur.copy(copy_stmt) as cp:
+                # This COPY statement correctly omits the `id` column,
+                # which will now be filled by the (correctly copied) identity generator.
+                copy_stmt_for_real = sql.SQL(
+                    "COPY {} ({}) FROM STDIN WITH (FORMAT CSV, NULL {})"
+                ).format(_ident(tmp_name), col_list, sql.Literal(csv_null))
+
+                with cur.copy(copy_stmt_for_real) as cp:
                     cp.write(buf.read())
+
+                # This is the "all-or-nothing" statement that moves data
+                # from the temp table to the real one.
+                insert_stmt = sql.SQL("INSERT INTO {} ({}) SELECT * FROM {}").format(
+                    _ident(table_name), col_list, _ident(tmp_name)
+                )
+
+                # We must use SELECT * here, *not* SELECT col_list, because
+                # the temp table's `id`s are temporary. We want the *real* table
+                # to generate its *own* IDs upon insert.
+                # But wait, the temp table has the same columns.
+                # Let's be explicit and select the *same* columns we inserted.
 
                 insert_stmt = sql.SQL("INSERT INTO {} ({}) SELECT {} FROM {}").format(
                     _ident(table_name), col_list, col_list, _ident(tmp_name)
                 )
+
                 if on_conflict:
                     insert_stmt = (
                         insert_stmt + sql.SQL(" ON CONFLICT ") + sql.SQL(on_conflict)
