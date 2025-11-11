@@ -1,11 +1,9 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-import datetime
-import json
-from typing import Any, Iterable, Mapping, Optional, List, Tuple, DefaultDict
-from collections import defaultdict
 
-from httpx import post
+import math
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Iterable, Mapping, Optional, List, Tuple
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.store.models.accounts import Accounts
@@ -15,21 +13,23 @@ from smdt.store.models.actions import Actions, ActionType
 
 from smdt.standardizers.utils import (
     extract_emails,
-    extract_mentions,
     extract_hashtags,
     extract_urls,
 )
 
 
-from ast import literal_eval
-from rich import print
-import math
-import numpy as np
-
-
-def nan_to_none(val):
-    # Handle actual NaN (float or numpy.nan)
-    if isinstance(val, float) and math.isnan(val):
+def nan_to_none(val: Any) -> Any:
+    """Normalize various NaN-like values to None/leave normal scalars as-is."""
+    if val is None:
+        return None
+    # Fast path: ints / bools / normal strings
+    if isinstance(val, (int, bool)):
+        return val
+    # Handle float NaN
+    if isinstance(val, float):
+        return None if math.isnan(val) else val
+    # Handle numpy.nan without importing numpy (duck-typing on repr)
+    if repr(val) == "nan":
         return None
     # Handle string "nan"
     if isinstance(val, str) and val.lower() == "nan":
@@ -38,231 +38,236 @@ def nan_to_none(val):
 
 
 def map2int(value: Any) -> Optional[int]:
+    """Convert value to int if possible, returning None on failure or NaN-like."""
     value = nan_to_none(value)
+    if value is None:
+        return None
     try:
         return int(value)
     except (ValueError, TypeError):
         return None
 
 
-def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
-    total = 0
-    for field in ("likeCount", "replyCount", "quoteCount", "retweetCount"):
-        try:
-            val = int(record.get(field))
-        except Exception:
-            val = None
-        if isinstance(val, int):
-            total += val
-    return total
-
-
-def get_embedded_user(record: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-    user_str = record.get("user", "")
+def _dt(s: Optional[str]) -> Optional[datetime]:
+    """Parse ISO8601-ish timestamp into timezone-aware UTC datetime."""
+    if not s:
+        return None
     try:
-        user = eval(user_str, {"__builtins__": {}}, {"datetime": datetime})
-        if isinstance(user, dict):
-            return user
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except Exception:
         return None
-    return None
 
 
 @dataclass
 class TwitterUSCStandardizer(Standardizer):
     name: str = "twitter_usc"
 
-    def standardize(self, input_record) -> Iterable[Any]:
+    def standardize(
+        self, input_record: Tuple[Mapping[str, Any], SourceInfo]
+    ) -> Iterable[Any]:
         """
-        id or id_str => post_id
-        text or rawContent => body
-
-
-        hashtags = '[]' => entities.HASHTAG
-
-        # mentionedUsers
-
-        # engagement_count
-        likeCount
-        retweetCount
-        quoteCount
-        replyCount
-        viewCount {}
-
-        in_reply_to_status_id_str => target_post_id
-        in_reply_to_user_id_str => target_account_id
-        if reply:
-            - user
-                id or id_str => account_id
-
-
-
-        location => location only name of the place, no geocoords
+        Standardize a single Twitter USC row into Accounts, Posts, Entities, Actions.
         """
+        outputs: List[Any] = []
+        record, _src = input_record
 
-        outputs = []
-        record, src = input_record
-        epoch = record.get("epoch")
-        epoch = nan_to_none(epoch)
-        if epoch:
-            created_at = datetime.datetime.fromtimestamp(
-                epoch, tz=datetime.timezone.utc
+        # ---------------- timestamps ----------------
+        epoch = nan_to_none(record.get("epoch"))
+        created_at: Optional[datetime] = None
+        if epoch is not None:
+            # ensure float in case it's string-ish
+            created_at = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
+
+        # ---------------- basic post fields ----------------
+        post_id = record.get("id_str") or record.get("id")
+        conversation_id_raw = record.get("conversationIdStr", "") or record.get(
+            "conversationId", ""
+        )
+        conversation_id = str(conversation_id_raw) if conversation_id_raw else None
+
+        text = record.get("text") or ""
+        raw_content = record.get("rawContent") or ""
+        body = text or raw_content or None  # prefer text, then rawContent
+
+        url = nan_to_none(record.get("url"))
+
+        # username from url if present
+        username: Optional[str] = None
+        if url:
+            url_splits = str(url).split("/status/")
+            if len(url_splits) == 2:
+                parts = url_splits[0].split("/")
+                if parts:
+                    username = parts[-1]
+
+        # ---------------- user ----------------
+        account_id = nan_to_none(record.get("user__id_str")) or nan_to_none(
+            record.get("user__id")
+        )
+        if isinstance(account_id, (float, int)):
+            # Make sure it's a clean string without ".0"
+            account_id = str(int(account_id))  # type: ignore[assignment]
+
+        user_created = record.get("user__created")
+        if isinstance(user_created, str):
+            user_created = _dt(user_created)
+
+        # If created_at is missing, fall back to user_created if available
+        if created_at is None and isinstance(user_created, datetime):
+            created_at = user_created
+
+        # ---------------- Accounts ----------------
+        if user_created:
+            outputs.append(
+                Accounts(
+                    created_at=user_created,
+                    account_id=account_id,
+                    username=username,
+                    profile_name=record.get("user__username"),
+                    bio=record.get("user__rawDescription"),
+                    location=None,
+                    post_count=nan_to_none(record.get("user__statusesCount")),
+                    friend_count=nan_to_none(record.get("user__friendsCount")),
+                    follower_count=nan_to_none(record.get("user__followersCount")),
+                    is_verified=record.get("user__verified"),
+                    profile_image_url=record.get("user__profileImageUrl"),
+                    retrieved_at=created_at,
+                )
             )
 
-        post_id = record.get("id_str") or record.get("id")
-        conversation_id = str(record.get("conversationIdStr", "")) or str(
-            record.get("conversationId", "")
+        # ---------------- Posts ----------------
+        view_count = map2int(record.get("viewCount__count"))
+
+        outputs.append(
+            Posts(
+                created_at=created_at,
+                account_id=account_id,
+                post_id=post_id,
+                conversation_id=conversation_id,
+                body=body,
+                like_count=map2int(record.get("likeCount")),
+                view_count=view_count,
+                share_count=map2int(record.get("retruthCount")),
+                comment_count=map2int(record.get("replyCount")),
+                quote_count=map2int(record.get("quoteCount")),
+                bookmark_count=None,
+                location=None,
+                retrieved_at=created_at,
+            )
         )
-        body = record.get("text") or record.get("rawContent")
-        # location = nan_to_none(record.get("location", None))
 
-        url = nan_to_none(record.get("url", None))
-
-        url_splits = url.split("/status/") if url else []
-        if len(url_splits) == 2:
-            username = url_splits[0].split("/")
-            if len(username) > 0:
-                username = username[-1]
-            else:
-                username = None
+        # ---------------- Entities (mentions / hashtags / URLs / emails) ----------------
+        msnames_raw = record.get("mentionedUsers__screen_names", "")
+        msnames_raw = nan_to_none(msnames_raw)
+        if isinstance(msnames_raw, str) and msnames_raw:
+            msnames = [m for m in msnames_raw.split(",") if m]
         else:
-            username = None
+            msnames = []
 
-        user = get_embedded_user(record)
-
-        if user and isinstance(user, dict):
-
-            account_id = user.get("id_str") or user.get("id")
-            if user.get("created"):
-                outputs.append(
-                    Accounts(
-                        created_at=user.get("created"),
-                        account_id=account_id,
-                        username=username,
-                        profile_name=user.get("username", None),
-                        bio=user.get("rawDescription", None),
-                        location=None,
-                        post_count=user.get("statusesCount", None),
-                        friend_count=user.get("friendsCount", None),
-                        follower_count=user.get("followersCount", None),
-                        is_verified=user.get("verified", None),
-                        profile_image_url=user.get("profileImageUrl", None),
-                        retrieved_at=created_at,
-                    )
+        for mention in msnames:
+            outputs.append(
+                Entities(
+                    created_at=created_at,
+                    entity_type=EntityType.USER_TAG,
+                    account_id=account_id,
+                    post_id=post_id,
+                    body=str(mention).replace("@", ""),
+                    retrieved_at=created_at,
                 )
+            )
 
-                view_count_obj = literal_eval(
-                    nan_to_none(record.get("viewCount", "None"))
-                )
-                if isinstance(view_count_obj, dict):
-                    view_count = map2int(view_count_obj.get("count"))
+        # For text-based entities, avoid running regex twice: use combined text
+        combined_text = " ".join(p for p in (text, raw_content) if p)
+
+        if combined_text:
+            hashtags = set(extract_hashtags(combined_text))
+            for hashtag in hashtags:
                 outputs.append(
-                    Posts(
+                    Entities(
                         created_at=created_at,
+                        entity_type=EntityType.HASHTAG,
                         account_id=account_id,
                         post_id=post_id,
-                        conversation_id=(
-                            conversation_id if conversation_id != "" else None
-                        ),
-                        body=body,
-                        like_count=map2int(record.get("likeCount")),
-                        view_count=view_count,
-                        share_count=map2int(record.get("retruthCount")),
-                        comment_count=map2int(record.get("replyCount")),
-                        quote_count=map2int(record.get("quoteCount")),
-                        bookmark_count=None,
-                        location=None,
+                        body=hashtag.replace("#", ""),
                         retrieved_at=created_at,
                     )
                 )
 
-                mentions = literal_eval(record.get("mentionedUsers", "[]"))
-                for mention in mentions:
-                    mention = nan_to_none(mention)
-                    if mention and nan_to_none(mention.get("screen_name")):
-                        outputs.append(
-                            Entities(
-                                created_at=created_at,
-                                entity_type=EntityType.USER_TAG,
-                                account_id=account_id,
-                                post_id=post_id,
-                                body=mention.get("screen_name").replace("@", ""),
-                                retrieved_at=created_at,
-                            )
-                        )
-                hashtags = set(extract_hashtags(record.get("text"))) | set(
-                    extract_hashtags(record.get("rawContent"))
-                )
-                for hashtag in hashtags:
-                    outputs.append(
-                        Entities(
-                            created_at=created_at,
-                            entity_type=EntityType.HASHTAG,
-                            account_id=account_id,
-                            post_id=post_id,
-                            body=hashtag.replace("#", ""),
-                            retrieved_at=created_at,
-                        )
-                    )
-
-                urls = set(extract_urls(record.get("text"))) | set(
-                    extract_urls(record.get("rawContent"))
-                )
-                for url in urls:
-                    outputs.append(
-                        Entities(
-                            created_at=created_at,
-                            entity_type=EntityType.LINK,
-                            account_id=account_id,
-                            post_id=post_id,
-                            body=url,
-                            retrieved_at=created_at,
-                        )
-                    )
-                emails = set(extract_emails(record.get("text"))) | set(
-                    extract_emails(record.get("rawContent"))
-                )
-                for email in emails:
-                    outputs.append(
-                        Entities(
-                            created_at=created_at,
-                            entity_type=EntityType.EMAIL,
-                            account_id=account_id,
-                            post_id=post_id,
-                            body=email,
-                            retrieved_at=created_at,
-                        )
-                    )
-            if record.get("in_reply_to_status_id_str") or record.get(
-                "in_reply_to_status_id"
-            ):
+            urls = set(extract_urls(combined_text))
+            for u in urls:
                 outputs.append(
-                    Actions(
+                    Entities(
                         created_at=created_at,
-                        action_type=ActionType.COMMENT,
-                        originator_account_id=account_id,
-                        originator_post_id=post_id,
-                        target_account_id=record.get("in_reply_to_user_id_str"),
-                        target_post_id=record.get("in_reply_to_status_id_str"),
+                        entity_type=EntityType.LINK,
+                        account_id=account_id,
+                        post_id=post_id,
+                        body=u,
                         retrieved_at=created_at,
                     )
                 )
 
-            if record.get("retweetedUserID") or record.get("retweetedStatusID"):
+            emails = set(extract_emails(combined_text))
+            for email in emails:
                 outputs.append(
-                    Actions(
+                    Entities(
                         created_at=created_at,
-                        action_type=ActionType.SHARE,
-                        originator_account_id=account_id,
-                        originator_post_id=post_id,
-                        target_account_id=record.get("retweetedUserID"),
-                        target_post_id=record.get("retweetedStatusID"),
+                        entity_type=EntityType.EMAIL,
+                        account_id=account_id,
+                        post_id=post_id,
+                        body=email,
                         retrieved_at=created_at,
                     )
                 )
 
-            if record.get("quotedTweet", False) == True:
-                # This is just self declaration, actions cannot be made becuase there is no target info
-                pass
+        # ---------------- Actions ----------------
+        originator_account_id = account_id
+        originator_post_id = post_id
+
+        in_reply_to_status = nan_to_none(
+            record.get("in_reply_to_status_id_str")
+        ) or nan_to_none(record.get("in_reply_to_status_id"))
+
+        if in_reply_to_status and (originator_account_id or originator_post_id):
+            outputs.append(
+                Actions(
+                    created_at=created_at,
+                    action_type=ActionType.COMMENT,
+                    originator_account_id=originator_account_id,
+                    originator_post_id=originator_post_id,
+                    target_account_id=nan_to_none(
+                        record.get("in_reply_to_user_id_str")
+                    ),
+                    target_post_id=in_reply_to_status,
+                    retrieved_at=created_at,
+                )
+            )
+
+        retweeted_user_id = nan_to_none(record.get("retweetedUserID"))
+        retweeted_status_id = nan_to_none(record.get("retweetedStatusID"))
+
+        # (retweeted_user_id or retweeted_status_id) must hold AND we must have an originator
+        if (retweeted_user_id or retweeted_status_id) and (
+            originator_account_id or originator_post_id
+        ):
+            outputs.append(
+                Actions(
+                    created_at=created_at,
+                    action_type=ActionType.SHARE,
+                    originator_account_id=originator_account_id,
+                    originator_post_id=originator_post_id,
+                    target_account_id=retweeted_user_id,
+                    target_post_id=retweeted_status_id,
+                    retrieved_at=created_at,
+                )
+            )
+
+        # quotedTweet handling left unchanged
+        # if record.get("quotedTweet", False) is True:
+        #     pass
 
         return outputs
