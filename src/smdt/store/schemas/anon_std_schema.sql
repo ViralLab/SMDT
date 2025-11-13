@@ -1,3 +1,4 @@
+-- ========= Anonymized Schema =========
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
@@ -10,11 +11,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ---------- Core tables (ANON) ----------
--- Notes:
---   * ID/key columns will store pseudonyms (HMAC hex) produced by the exporter.
---   * bio/body; originals are not present.
---   * location columns are kept (schema compatibility); exporter must sanitize/coarsen.
-
 CREATE TABLE IF NOT EXISTS accounts (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     account_id TEXT,            -- pseudonymized
@@ -148,16 +144,23 @@ CREATE INDEX IF NOT EXISTS actions_created_at_brin ON actions  USING BRIN (creat
 CREATE INDEX IF NOT EXISTS entities_created_at_brin ON entities USING BRIN (created_at);
 
 -- Compression (set & policy)
+-- This just *enables* compression on the tables, it does not *schedule* it.
 ALTER TABLE accounts SET (timescaledb.compress, timescaledb.compress_segmentby = 'account_id');
 ALTER TABLE posts    SET (timescaledb.compress, timescaledb.compress_segmentby = 'account_id');
 ALTER TABLE entities SET (timescaledb.compress, timescaledb.compress_segmentby = 'entity_type, account_id');
 ALTER TABLE actions  SET (timescaledb.compress, timescaledb.compress_segmentby = 'action_type');
 
-SELECT add_compression_policy('accounts', INTERVAL '30 days');
-SELECT add_compression_policy('posts',    INTERVAL '7 days');
-SELECT add_compression_policy('entities', INTERVAL '7 days');
-SELECT add_compression_policy('actions',  INTERVAL '7 days');
+--- [MODIFIED FOR BULK-LOAD] ---
+--- Pollicies are commented out.
+--- I should add these once data is stored... 
 
+-- SELECT add_compression_policy('accounts', INTERVAL '30 days');
+-- SELECT add_compression_policy('posts',    INTERVAL '7 days');
+-- SELECT add_compression_policy('entities', INTERVAL '7 days');
+-- SELECT add_compression_policy('actions',  INTERVAL '7 days');
+
+
+-- Reorder (scan locality)
 SELECT add_reorder_policy('accounts','accounts_acct_created_uk');
 SELECT add_reorder_policy('posts',   'posts_acct_time_idx');
 SELECT add_reorder_policy('actions', 'actions_type_time_idx');
