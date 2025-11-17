@@ -27,6 +27,15 @@ def dsn():
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("Set TEST_DATABASE_URL for DB integration tests.")
+
+    # If TEST_DATABASE_URL is set but the DB is unreachable (placeholder values), skip tests
+    try:
+        # quick connection attempt with short timeout
+        with psycopg.connect(url, connect_timeout=1):
+            pass
+    except Exception as e:
+        pytest.skip(f"TEST_DATABASE_URL is set but DB is unreachable: {e}")
+
     return url
 
 
