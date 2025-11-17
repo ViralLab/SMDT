@@ -125,7 +125,9 @@ def test_standardizer_emits_comment_action_when_reply_true():
         "replying_to": "['@target']",
     }
     result = list(std.standardize((rec, SourceInfo(path="usc.csv", member="usc.csv"))))
-    assert any(isinstance(o, Actions) and o.action_type == ActionType.COMMENT for o in result)
+    assert any(
+        isinstance(o, Actions) and o.action_type == ActionType.COMMENT for o in result
+    )
 
 
 def test_missing_username_or_postid_returns_empty():
