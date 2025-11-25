@@ -8,18 +8,49 @@ from .registry import read_from_filelike
 
 
 class TarReader(Reader):
+    """Reader for tar archives (uncompressed or compressed)."""
     name = "tar"
 
     def __init__(
         self, *, member_filter: Optional[Callable[[str], bool]] = None
     ) -> None:
+        """Initialize the TarReader.
+
+        Args:
+            member_filter: Optional callable to filter members by name.
+        """
         self.member_filter = member_filter
 
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
+        """Check if the reader supports the given URI.
+
+        Supports .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz.
+
+        Args:
+            uri: URI to check.
+            content_type: Optional content type hint.
+
+        Returns:
+            True if supported, False otherwise.
+        """
         u = uri.lower()
         return u.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"))
 
     def stream(self, uri: str, **kwargs: Any) -> Iterable[Mapping[str, Any]]:
+        """Stream records from a tar archive.
+
+        Iterates over members, filtering them, and delegating to appropriate readers.
+
+        Args:
+            uri: URI to read from.
+            **kwargs: Additional arguments.
+                include (tuple): Patterns to include.
+                exclude (tuple): Patterns to exclude.
+                member_filter (callable): Custom filter function.
+
+        Yields:
+            Dictionary representing a record.
+        """
         include = tuple(kwargs.get("include", ())) or None
         exclude = tuple(kwargs.get("exclude", ())) or None
         member_filter = kwargs.get("member_filter", self.member_filter)

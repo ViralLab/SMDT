@@ -3,6 +3,13 @@ import pyarrow.parquet as pq
 
 
 def write_edges_to_parquet_from_chunks(chunks, output_path, compression="snappy"):
+    """Write edge chunks to a Parquet file.
+
+    Args:
+        chunks: Iterable of DataFrames (edge chunks).
+        output_path: Path to the output Parquet file.
+        compression: Compression algorithm (default: "snappy").
+    """
     writer = None
     for chunk in chunks:
         if chunk.empty:

@@ -24,6 +24,11 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
     """
 
     def _edge_query(self) -> Tuple[str, Dict[str, Any]]:
+        """Construct the SQL query for entity co-occurrence edges.
+
+        Returns:
+            Tuple of (sql_query, parameters).
+        """
         filters: Dict[str, Any] = self.spec.filters
 
         # Example: "hashtag" -> "HASHTAG" (matches DB enum values)
@@ -80,6 +85,11 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
         return sql, params
 
     def _query_edges(self) -> pd.DataFrame:
+        """Run the query and add edge types.
+
+        Returns:
+            DataFrame of edges with columns: src, dst, weight, edge_type.
+        """
         df = super()._query_edges()
         if df.empty:
             return df
@@ -93,6 +103,14 @@ class EntityCooccurrenceNetworkBuilder(NetworkBuilder):
         return df[["src", "dst", "weight", "edge_type"]]
 
     def _derive_nodes(self, edges: pd.DataFrame) -> pd.DataFrame:
+        """Derive nodes from edges.
+
+        Args:
+            edges: DataFrame of edges.
+
+        Returns:
+            DataFrame of nodes with columns: node_id, label, type.
+        """
         if edges.empty:
             return pd.DataFrame(columns=["node_id", "label", "type"])
 

@@ -22,7 +22,15 @@ _SCHEMANAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _maybe_set_search_path(conn: psycopg.Connection, schema: Optional[str]) -> None:
-    """If a schema is provided, set search_path to 'schema, public' safely."""
+    """If a schema is provided, set search_path to 'schema, public' safely.
+
+    Args:
+        conn: PostgreSQL connection.
+        schema: Schema name.
+
+    Raises:
+        ValueError: If schema name contains invalid characters.
+    """
     if not schema:
         return
     if not _SCHEMANAME_RE.match(schema):
@@ -34,6 +42,14 @@ def _maybe_set_search_path(conn: psycopg.Connection, schema: Optional[str]) -> N
 
 
 def _ident(name: str) -> sql.Identifier:
+    """Create a SQL identifier for safe use in queries.
+
+    Args:
+        name: Identifier name.
+
+    Returns:
+        SQL Identifier object.
+    """
     return sql.Identifier(name)
 
 
@@ -51,6 +67,16 @@ class StandardDB:
     def __init__(
         self, db_name: str, cfg: Optional[DBConfig] = None, *, initialize: bool = False
     ):
+        """Initialize StandardDB instance.
+
+        Args:
+            db_name: Name of the database.
+            cfg: Optional database configuration.
+            initialize: If True, recreate database interactively.
+
+        Raises:
+            ValueError: If required DB credentials are missing.
+        """
         self.db_name = db_name
         self.cfg = cfg or DBConfig()
 
@@ -73,9 +99,22 @@ class StandardDB:
     # ---------------- Connections ----------------
 
     def _maintenance_db(self) -> str:
+        """Get the maintenance database name for administrative operations.
+
+        Returns:
+            Maintenance database name (default: 'postgres').
+        """
         return getattr(self.cfg, "default_dbname", None) or "postgres"
 
     def connect(self) -> psycopg.Connection:
+        """Create a connection to the database.
+
+        Returns:
+            PostgreSQL connection object.
+
+        Raises:
+            psycopg.OperationalError: If connection fails.
+        """
         appname = getattr(self.cfg, "application_name", "standarddb")
         options = f"-c application_name={appname!s}"
         try:
@@ -111,12 +150,25 @@ class StandardDB:
     # ---------------- Introspection ----------------
 
     def _db_exists(self, cur, name: str) -> bool:
+        """Check if a database exists.
+
+        Args:
+            cur: Database cursor.
+            name: Database name.
+
+        Returns:
+            True if database exists, False otherwise.
+        """
         cur.execute("SELECT 1 FROM pg_database WHERE datname = %s;", (name,))
         return bool(cur.fetchone())
 
     # ---------------- DB lifecycle ----------------
 
     def init_db(self) -> None:
+        """Create the database if it doesn't exist.
+
+        Uses CREATE_DB_OPTS for encoding, template, and owner settings.
+        """
         log.info("Creating database %s if it doesn't exist", self.db_name)
         start = time.time()
         conn = self.connect()
@@ -155,6 +207,11 @@ class StandardDB:
             log.debug("init_db finished in %.2fs", time.time() - start)
 
     def reset_schema(self) -> None:
+        """Drop and recreate the schema.
+
+        Raises:
+            ValueError: If cfg.owner is not set.
+        """
         schema = getattr(self.cfg, "owner", None)
         if not schema:
             raise ValueError("cfg.owner (schema name) is required for reset_schema().")
@@ -176,6 +233,16 @@ class StandardDB:
     # ---------------- Schema application ----------------
 
     def init_schema(self, schema_sql_path: Optional[str] = None) -> None:
+        """Apply SQL schema from file to the database.
+
+        Args:
+            schema_sql_path: Path to SQL schema file.
+
+        Raises:
+            ValueError: If no schema path provided.
+            FileNotFoundError: If schema file doesn't exist.
+            RuntimeError: If schema application fails.
+        """
         path = schema_sql_path or getattr(self.cfg, "standard_schema_path", None)
         if not path:
             raise ValueError("No schema_sql_path provided and no default in config")
@@ -205,6 +272,16 @@ class StandardDB:
             conn.close()
 
     def recreate_db_interactive(self, schema_sql_path: str) -> None:
+        """Interactively recreate database and schema.
+
+        Prompts user if database exists, offering to reset schema or abort.
+
+        Args:
+            schema_sql_path: Path to SQL schema file.
+
+        Raises:
+            SystemExit: If user aborts.
+        """
         conn = self.connect()
         try:
             conn.autocommit = True
@@ -248,6 +325,18 @@ class StandardDB:
         continue_on_error: bool = False,  # SAVEPOINT per row to skip failing rows
         use_pipeline: bool = False,  # libpq pipeline to cut round-trips
     ) -> None:
+        """Bulk insert using executemany.
+
+        Args:
+            items: Sequence of model instances to insert.
+            include_id: Whether to include ID column in insert.
+            on_conflict: ON CONFLICT clause (e.g., "(id) DO NOTHING").
+            continue_on_error: Use SAVEPOINTs to skip failing rows.
+            use_pipeline: Use libpq pipeline to reduce round-trips.
+
+        Raises:
+            KeyError: If model has no table mapping.
+        """
         if not items:
             log.info("bulk_insert_executemany: no items to insert; returning")
             return
@@ -349,6 +438,19 @@ class StandardDB:
         on_conflict: Optional[str] = None,
         chunk_size: int = 5000,
     ) -> None:
+        """Bulk insert using multi-VALUES syntax.
+
+        More efficient than executemany for large batches.
+
+        Args:
+            items: Sequence of model instances to insert.
+            include_id: Whether to include ID column in insert.
+            on_conflict: ON CONFLICT clause.
+            chunk_size: Maximum rows per INSERT statement.
+
+        Raises:
+            KeyError: If model has no table mapping.
+        """
         if not items:
             log.info("bulk_insert_multi_values: no items to insert; returning")
             return
@@ -794,6 +896,16 @@ class StandardDB:
         chunk_size: int,  # kept for signature symmetry
         include_id: bool = False,
     ) -> None:
+        """Internal helper using COPY to temp table then INSERT...SELECT.
+
+        Args:
+            items: Sequence of model instances.
+            table_name: Target table name.
+            cols: Column names.
+            on_conflict: ON CONFLICT clause.
+            chunk_size: Not used, kept for signature compatibility.
+            include_id: Whether to include ID column.
+        """
         if not items:
             return
 

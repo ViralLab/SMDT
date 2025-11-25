@@ -12,16 +12,48 @@ except Exception:  # pragma: no cover
 
 
 def file_ext(uri: str) -> str:
+    """Get the lowercase file extension from a URI.
+
+    Handles multi-part extensions like .tar.gz.
+
+    Args:
+        uri: URI or file path.
+
+    Returns:
+        Lowercase extension.
+    """
     p = Path(uri)
     suf = "".join(p.suffixes).lower()
     return suf if suf else p.suffix.lower()
 
 
 def open_local_binary(uri: str) -> IO[bytes]:
+    """Open a local file for binary reading.
+
+    Args:
+        uri: File path.
+
+    Returns:
+        Binary file object.
+    """
     return open(uri, "rb")
 
 
 def maybe_decompress(f: IO[bytes], name_or_ext: Optional[str]) -> IO[bytes]:
+    """Wrap a file object with a decompressor if indicated by the extension.
+
+    Supports .gz, .bz2, .xz, .zst.
+
+    Args:
+        f: Binary file object.
+        name_or_ext: Filename or extension to check.
+
+    Returns:
+        Decompressed file object or the original file object.
+
+    Raises:
+        RuntimeError: If zstandard is required but not installed.
+    """
     if not name_or_ext:
         return f
     low = name_or_ext.lower()
@@ -42,10 +74,16 @@ def maybe_decompress(f: IO[bytes], name_or_ext: Optional[str]) -> IO[bytes]:
 
 
 def open_for_reading(uri: str) -> IO[bytes]:
-    """
-    Open any local file for binary reading, with compression handled.
+    """Open any local file for binary reading, with compression handled.
+
     Returns a file-like that, when closed, closes both the decompressor (if any)
     and the underlying base file.
+
+    Args:
+        uri: File path.
+
+    Returns:
+        Binary file object (possibly wrapped).
     """
     base = open_local_binary(uri)
     wrapped = maybe_decompress(base, file_ext(uri))

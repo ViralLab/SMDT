@@ -16,6 +16,12 @@ except Exception:  # pragma: no cover
 
 @dataclass
 class Redactor:
+    """Redacts sensitive information from text.
+
+    Attributes:
+        handle_mapper: Function to map user handles.
+        map_host: Optional function to map hostnames.
+    """
     handle_mapper: Callable[[str], str]
     map_host: Optional[Callable[[str], str]] = None
 
@@ -31,6 +37,14 @@ class Redactor:
         self._urlx = URLExtract()
 
     def _normalize_host(self, url_or_host: str) -> str | None:
+        """Extract and normalize the hostname from a URL or host string.
+
+        Args:
+            url_or_host: URL or hostname string.
+
+        Returns:
+            Normalized hostname, or None if extraction fails.
+        """
         if not url_or_host:
             return None
         s = url_or_host.strip()
@@ -53,6 +67,16 @@ class Redactor:
         return host
 
     def redact(self, text: Optional[str]) -> Optional[str]:
+        """Redact sensitive information from text.
+
+        Redacts mentions, emails, and URLs.
+
+        Args:
+            text: Input text.
+
+        Returns:
+            Redacted text, or None if input is None.
+        """
         if text is None:
             return None
         if text == "":
@@ -107,6 +131,15 @@ class Redactor:
     def sanitize_entity_body(
         self, entity_type: str, raw: Optional[str]
     ) -> Optional[str]:
+        """Sanitize the body of an entity based on its type.
+
+        Args:
+            entity_type: Type of the entity (e.g., HASHTAG, USER_TAG, LINK, EMAIL).
+            raw: Raw body text.
+
+        Returns:
+            Sanitized body text, or None if input is None.
+        """
         if raw is None:
             return None
         val = raw.strip()

@@ -12,7 +12,21 @@ STANDARD_SCHEMA_SQL_PATH = os.path.join(
 
 
 @dataclass
+@dataclass
 class DBConfig:
+    """Database configuration parameters.
+
+    Attributes:
+        default_dbname: Default database name.
+        user: Database user.
+        password: Database password.
+        owner: Database owner.
+        host: Database host.
+        port: Database port.
+        application_name: Application name for DB connections.
+        connect_timeout: Connection timeout in seconds.
+        standard_schema_path: Path to the standard schema SQL file.
+    """
     default_dbname: str = os.getenv("DEFAULT_DB_NAME", "")
     user: str = os.getenv("DB_USER", "")
     password: str = os.getenv("DB_PASSWORD", "")
@@ -25,9 +39,20 @@ class DBConfig:
 
 
 @dataclass
+@dataclass
 class AnonymizationVariables:
+    """Configuration for anonymization secrets."""
+
     @property
     def pepper(self) -> bytes:
+        """Get the pepper for hashing from the environment.
+
+        Returns:
+            The pepper as bytes.
+
+        Raises:
+            RuntimeError: If the PEPPER environment variable is not set.
+        """
         val: str = os.getenv("PEPPER")
         if not val:
             raise RuntimeError(

@@ -9,9 +9,18 @@ from smdt.standardizers.row import Record
 
 
 class PandasCsvReader(Reader):
+    """Reader for CSV/TSV files using pandas."""
     name = "csv_pd"
 
     def _pd(self):
+        """Lazy import of pandas.
+
+        Returns:
+            The pandas module.
+
+        Raises:
+            MissingOptionalDependency: If pandas is not installed.
+        """
         try:
             import pandas as pd
 
@@ -22,6 +31,17 @@ class PandasCsvReader(Reader):
             ) from e
 
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
+        """Check if the reader supports the given URI.
+
+        Supports .csv, .tsv, .tab and their compressed variants.
+
+        Args:
+            uri: URI to check.
+            content_type: Optional content type hint.
+
+        Returns:
+            True if supported, False otherwise.
+        """
         ext = file_ext(uri)
         return ext.endswith(
             (
@@ -44,6 +64,15 @@ class PandasCsvReader(Reader):
         )
 
     def stream(self, uri: str, **kwargs: Any) -> Iterable[Mapping[str, Any]]:
+        """Stream records from a CSV/TSV file.
+
+        Args:
+            uri: URI to read from.
+            **kwargs: Additional arguments passed to pandas.read_csv.
+
+        Yields:
+            Dictionary representing a record.
+        """
         # open_for_reading handles compression automatically
         f = open_for_reading(uri)
         try:
@@ -57,6 +86,15 @@ class PandasCsvReader(Reader):
     def stream_from_filelike(
         self, f: BinaryIO, **kwargs: Any
     ) -> Iterable[Mapping[str, Any]]:
+        """Stream records from a file-like object.
+
+        Args:
+            f: File-like object.
+            **kwargs: Additional arguments.
+
+        Yields:
+            Dictionary representing a record.
+        """
         # If archive passes a compressed member (e.g., *.csv.gz), wrap it
         member_name = kwargs.pop("member_name", kwargs.pop("name", None))
         f_dec = maybe_decompress(f, member_name) if member_name else f
@@ -66,6 +104,16 @@ class PandasCsvReader(Reader):
     def _stream_from_filelike(
         self, f: BinaryIO, *, member_name: Optional[str], **kwargs: Any
     ) -> Iterable[Mapping[str, Any]]:
+        """Internal method to stream from a file-like object using pandas.
+
+        Args:
+            f: File-like object.
+            member_name: Name of the member (for logging/debugging).
+            **kwargs: Additional arguments for pandas.read_csv.
+
+        Yields:
+            Dictionary representing a record.
+        """
         pd = self._pd()
         params = set(inspect.signature(pd.read_csv).parameters)
         # Let caller override chunksize; default to 10_000

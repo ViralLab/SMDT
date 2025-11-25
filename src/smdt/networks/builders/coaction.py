@@ -29,6 +29,11 @@ class CoActionNetworkBuilder(NetworkBuilder):
     """
 
     def _edge_query(self) -> Tuple[str, Dict[str, Any]]:
+        """Construct the SQL query for co-action edges.
+
+        Returns:
+            Tuple of (sql_query, parameters).
+        """
         filters: Dict[str, Any] = self.spec.filters
         action_type = self.spec.edge_kind.upper()
 
@@ -77,7 +82,11 @@ class CoActionNetworkBuilder(NetworkBuilder):
         return sql, params
 
     def _query_edges(self) -> pd.DataFrame:
-        """Run the query and ensure correct schema + weight normalization."""
+        """Run the query and ensure correct schema + weight normalization.
+
+        Returns:
+            DataFrame of edges with columns: src, dst, weight, edge_type.
+        """
         df = super()._query_edges()
         if df.empty:
             return df
@@ -90,7 +99,14 @@ class CoActionNetworkBuilder(NetworkBuilder):
         return df[["src", "dst", "weight", "edge_type"]]
 
     def _derive_nodes(self, edges: pd.DataFrame) -> pd.DataFrame:
-        """Derive node table: distinct user IDs."""
+        """Derive node table: distinct user IDs.
+
+        Args:
+            edges: DataFrame of edges.
+
+        Returns:
+            DataFrame of nodes with columns: node_id, type.
+        """
         if edges.empty:
             return pd.DataFrame(columns=["node_id", "type"])
 

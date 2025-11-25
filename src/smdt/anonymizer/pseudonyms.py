@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover
 
 
 class Algorithm(str, Enum):
+    """Supported hashing algorithms."""
     SHA256 = "sha256"
     SHA512 = "sha512"
     WHIRLPOOL = "whirlpool"
@@ -39,6 +40,15 @@ class Pseudonymizer:
     normalizer: Optional[Callable[[str], str]] = None
 
     def _h(self):
+        """Get the hash function for the configured algorithm.
+
+        Returns:
+            Hash function (e.g., hashlib.sha256).
+
+        Raises:
+            RuntimeError: If Whirlpool is selected but not installed.
+            ValueError: If an unsupported algorithm is configured.
+        """
         if self.algo == Algorithm.SHA256:
             return hashlib.sha256
         if self.algo == Algorithm.SHA512:
@@ -55,6 +65,14 @@ class Pseudonymizer:
         raise ValueError(f"Unsupported algo: {self.algo}")
 
     def _normalize(self, s: str) -> str:
+        """Normalize the input string.
+
+        Args:
+            s: Input string.
+
+        Returns:
+            Normalized string.
+        """
         if not s:
             return s
         x = s.strip()
@@ -63,6 +81,12 @@ class Pseudonymizer:
     def _hmac_hex(self, msg: str) -> str:
         """Keyed hashing (HMAC-like) that works for all algos incl. whirlpool.
         We avoid the stdlib hmac to keep the Whirlpool path consistent.
+
+        Args:
+            msg: Message to hash.
+
+        Returns:
+            Hexadecimal string of the hash.
         """
         if msg is None:  # type: ignore[unreachable]
             return None  # pragma: no cover
@@ -81,6 +105,12 @@ class Pseudonymizer:
     def make(self, value: Optional[str]) -> Optional[str]:
         """Return pseudonymized hex string, or None if input is None.
         Empty string remains empty string to preserve semantics.
+
+        Args:
+            value: Input string to pseudonymize.
+
+        Returns:
+            Pseudonymized hex string, or None/empty string.
         """
         if value is None:
             return None

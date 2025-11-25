@@ -14,6 +14,13 @@ class Record(Mapping[str, Any]):
     __slots__ = ("_values", "_index", "_keys")
 
     def __init__(self, values: tuple[Any, ...], index: Dict[str, int], keys: List[str]):
+        """Initialize a Record.
+
+        Args:
+            values: Tuple of values for this row.
+            index: Shared mapping of column name to position.
+            keys: Shared list of column names.
+        """
         self._values = values  # per-row tuple of values
         self._index = index  # shared: col_name -> position
         self._keys = keys  # shared: list of column names
@@ -47,8 +54,10 @@ class Record(Mapping[str, Any]):
         return ItemsView(self)
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Materialize a real dict. Slower, but available if users absolutely need it.
+        """Materialize a real dict. Slower, but available if users absolutely need it.
+
+        Returns:
+            Dictionary representation of the record.
         """
         return {k: self[k] for k in self._keys}
 
