@@ -2,6 +2,10 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from pathlib import Path
+import psycopg as pgsql
+import re
+from uuid import uuid4
 
 
 class BaseEnricher(ABC):
@@ -31,6 +35,12 @@ class BaseEnricher(ABC):
         self.config = config or {}
         self.model = None
 
+        self.cache_dir = self.config.cache_dir or str(
+            Path.home() / ".smdt_enricher_cache"
+        )
+        self.cache_prefix = "smdt_session_cache_"
+        self.generated_temp_table_name = self.cache_prefix + uuid4().hex
+
     # ---- Lifecycle ---------------------------------------------------------
     def setup(self) -> None:
         """Perform setup actions before running the enricher.
@@ -53,6 +63,97 @@ class BaseEnricher(ABC):
         This method should be overridden to load any necessary models or data.
         """
         pass
+
+    def reset_cache(self) -> None:
+        """Reset the cache by clearing cached IDs."""
+        cache_file = Path(self.cache_dir) / f"{self.ENRICHER_ID}_cached_ids.txt"
+        if cache_file.exists():
+            cache_file.unlink()
+
+        try:
+            with self.db.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"DROP TABLE IF EXISTS session_cache_{self.generated_temp_table_name}"
+                    )
+                conn.commit()
+        except Exception as e:
+            raise Exception(f"Error resetting cache table: {e}")
+
+    def write_current_cache_ids_to_file(self, ids: Iterable[int]) -> None:
+        """Cache output IDs to avoid redundant processing.
+
+        Args:
+            ids: Iterable of IDs that have already been processed.
+        """
+        # ensure cache directory exists
+        Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
+        cache_file = Path(self.cache_dir) / f"{self.ENRICHER_ID}_cached_ids.txt"
+        # append to the file
+        with open(cache_file, "a") as f:
+            for id_ in ids:
+                f.write(f"{id_}\n")
+
+    def setup_cache_table(self):
+        if not self.cached_ids or self.cfg.reset_cache:
+            return
+
+        # Create a safe table name (e.g., cache_bert_sentiment)
+        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self.MODEL_ID).lower()
+        self.cache_table_name = f"cache_ids_{safe_name}"
+
+        conn = self.db.connect()
+        try:
+            with conn.cursor() as cur:
+                # 1. Create a regular table
+                cur.execute(f"DROP TABLE IF EXISTS {self.generated_temp_table_name}")
+                cur.execute(
+                    f"CREATE TABLE {self.generated_temp_table_name} (post_id TEXT PRIMARY KEY)"
+                )
+
+                # 2. Bulk Insert
+                data = [(str(i),) for i in self.cached_ids]
+                cur.executemany(
+                    f"INSERT INTO {self.generated_temp_table_name} (post_id) VALUES (%s)",
+                    data,
+                )
+
+                conn.commit()
+                print(f"Initialized persistent cache table: {self.cache_table_name}")
+        finally:
+            conn.close()
+
+    def load_cached_output_ids_from_file(self) -> Iterable[int]:
+        """Load cached output IDs.
+
+        Returns:
+            Iterable of cached IDs.
+        """
+        # check if cache file exists
+        cache_file = Path(self.cache_dir) / f"{self.ENRICHER_ID}_cached_ids.txt"
+        if not cache_file.exists():
+            return []
+
+        cached_dids = set()
+        with open(cache_file, "r") as f:
+            for line in f:
+                cached_dids.add(line.strip())
+        return cached_dids
+
+    def clean_up_persistent_cache_tables(self):
+        # remove all of the tables starting with session_cache_
+        conn = self.db.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT tablename FROM pg_tables WHERE tablename LIKE '{self.cache_prefix}%'"
+                )
+                tables = cur.fetchall()
+                for (table_name,) in tables:
+                    cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+            conn.commit()
+        finally:
+            conn.close()
 
     # ---- DB IO -------------------------------------------------------------
     @abstractmethod

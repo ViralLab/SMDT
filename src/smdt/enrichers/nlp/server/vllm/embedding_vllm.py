@@ -26,6 +26,9 @@ class VLLMEmbeddingConfig:
     api_key: str = ""
     batch_size: int = 1024  # texts per embeddings API call
 
+    reset_cache: bool = False
+    cache_dir: Optional[str] = None  # optional
+
     def __post_init__(self) -> None:
         self.model_id_postfix = (self.model_id_postfix or "").strip()
         self.embedding_model_id = (self.embedding_model_id or "").strip()
@@ -89,6 +92,14 @@ class VLLMClientEnricher(BaseEnricher):
         self.applied_datetime = datetime.now(timezone.utc)
         self.client = None  # set in load_model()
 
+        # load the cached IDs
+        if self.cfg.reset_cache:
+            self.cached_ids = set()
+            self.reset_cache()
+        else:
+            self.cached_ids = set(self.load_cached_output_ids_from_file())
+            self.setup_cache_table()
+
     # ---------------- lifecycle / model ----------------
     def load_model(self) -> None:
         try:
@@ -101,46 +112,56 @@ class VLLMClientEnricher(BaseEnricher):
 
         self.client = OpenAI(base_url=self.cfg.base_url, api_key=self.cfg.api_key)
 
-    # ---------------- DB selection ----------------
-    def total_count(self) -> Optional[int]:
-        q = """
-            SELECT COUNT(*)
-            FROM posts p
-            WHERE p.body IS NOT NULL
-              AND p.body <> ''
-              AND NOT EXISTS (
-                  SELECT 1 FROM post_enrichments pe
-                  WHERE pe.post_id = p.id AND pe.model_id = %s
-              )
-        """
-        conn = self.db.connect(self.db.db_name)
+    def total_count(self) -> int:
+        where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
+        params = []
+
+        if self.cfg.only_missing:
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.MODEL_ID)
+
+        # Use the real table for exclusion
+        if not self.cfg.reset_cache and self.cached_ids:
+            where_clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM {self.generated_temp_table_name} c WHERE c.post_id = p.post_id::text)"
+            )
+
+        q = f"SELECT COUNT(*) FROM posts p WHERE {' AND '.join(where_clauses)}"
+
+        conn = self.db.connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(q, (self.MODEL_ID,))
+                cur.execute(q, params)
                 row = cur.fetchone()
-                return int(row[0]) if row and row[0] is not None else 0
+                return int(row[0]) if row else 0
         finally:
             conn.close()
 
     def fetch_batch(self, offset: int, limit: int) -> List[Dict[str, Any]]:
-        q = """
-            SELECT p.id AS post_id, p.body AS body
-            FROM posts p
-            WHERE p.body IS NOT NULL
-              AND p.body <> ''
-              AND NOT EXISTS (
-                  SELECT 1 FROM post_enrichments pe
-                  WHERE pe.post_id = p.id AND pe.model_id = %s
-              )
-            ORDER BY p.id
-            OFFSET %s
-            LIMIT %s
-        """
-        conn = self.db.connect(self.db.db_name)
+        where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
+        params = []
+
+        if self.cfg.only_missing:
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.MODEL_ID)
+
+        if not self.cfg.reset_cache and self.cached_ids:
+            where_clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM {self.generated_temp_table_name} c WHERE c.post_id = p.post_id::text)"
+            )
+
+        q = f"SELECT p.post_id, p.body, created_at, retrieved_at FROM posts p WHERE {' AND '.join(where_clauses)} ORDER BY p.id OFFSET %s LIMIT %s"
+        params.extend([offset, limit])
+
+        conn = self.db.connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(q, (self.MODEL_ID, offset, limit))
-                cols = [d.name if hasattr(d, "name") else d[0] for d in cur.description]
+                cur.execute(q, params)
+                cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, r)) for r in cur.fetchall()]
         finally:
             conn.close()
@@ -154,6 +175,7 @@ class VLLMClientEnricher(BaseEnricher):
 
         post_ids = [r["post_id"] for r in rows]
         texts = [(r.get("body") or "") for r in rows]
+        created_ats = [r.get("created_at") for r in rows]
 
         resp = self.client.embeddings.create(
             model=self.cfg.embedding_model_id,
@@ -161,7 +183,7 @@ class VLLMClientEnricher(BaseEnricher):
         )
 
         out: List[PostEnrichments] = []
-        for pid, item in zip(post_ids, resp.data):
+        for pid, created_at, item in zip(post_ids, created_ats, resp.data):
             vec = getattr(item, "embedding", None)
             if vec is None:
                 continue
@@ -172,50 +194,85 @@ class VLLMClientEnricher(BaseEnricher):
                 "dim": len(vec),
             }
             out.append(
-                PostEnrichments(
-                    created_at=self.applied_datetime,
-                    retrieved_at=self.applied_datetime,
-                    post_id=pid,
-                    model_id=self.MODEL_ID,
-                    content=payload,  # JSONB
-                )
+                {
+                    "created_at": created_at,
+                    "retrieved_at": self.applied_datetime,
+                    "post_id": pid,
+                    "model_id": self.MODEL_ID,
+                    "content": payload,  # JSONB
+                }
             )
         return out
 
     def model_batch_size(self) -> int:
         return self.cfg.batch_size
 
-    def save_results(self, results: List[PostEnrichments]) -> None:
+    # ---- persistence ----
+    def save_results(self, results: List[Dict[str, Any]]) -> None:
         if not results:
             return
-
         if self.cfg.do_save_to_db:
             try:
-                # Uses your resilient COPY → bulk → row-by-row fallback
                 results = [
                     PostEnrichments(
-                        created_at=self.applied_datetime,
+                        created_at=r["created_at"],
                         retrieved_at=self.applied_datetime,
                         post_id=r["post_id"],
                         model_id=r["model_id"],
-                        content=r["content"],  # JSONB
+                        body=r["content"],  # JSONB
                     )
                     for r in results
                 ]
+
                 self.db.insert_with_fallbacks(results)
+
+                self.write_current_cache_ids_to_file([r.post_id for r in results])
             except Exception as e:
                 print(f"[ERROR] Failed to insert results: {e}")
+            print(f"[INFO] Saved {len(results)} rows to post_enrichments.")
         else:
-            # Write JSONL file under output_dir
-            path = Path(self.cfg.output_dir) / f"{self.MODEL_ID}.jsonl"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
+            # Grouping results by the created_at day and storing in separate files
+            output_base = Path(self.cfg.output_dir or ".")
+            output_base.mkdir(parents=True, exist_ok=True)
+
+            # Use a dict to keep track of open files to avoid repeated opening/closing
+            open_files = {}
+
+            try:
                 for r in results:
+                    # 1. Extract the date for the filename (Default to 'unknown' if missing)
+                    c_at = r.get("created_at")
+                    date_str = c_at.strftime("%Y-%m-%d") if c_at else "unknown"
+
+                    # 2. Construct filename: e.g., model_name_2023-10-27.jsonl
+                    safe_model_id = self.MODEL_ID.replace("/", "_")
+                    outp = output_base / f"{safe_model_id}_{date_str}.jsonl"
+
+                    # 3. Get or create the file handle
+                    if date_str not in open_files:
+                        open_files[date_str] = outp.open("a", encoding="utf-8")
+
+                    # 4. Prepare and write the record
                     rec = {
-                        "created_at": self.applied_datetime.isoformat(),
-                        "retrieved_at": self.applied_datetime.isoformat(),
-                        "post_id": r.post_id,
-                        "model_id": r.model_id,
-                        "content": r.content,
+                        "created_at": c_at.isoformat() if c_at else None,
+                        "retrieved_at": (
+                            r["retrieved_at"].isoformat()
+                            if r.get("retrieved_at")
+                            else self.applied_datetime.isoformat()
+                        ),
+                        "post_id": r["post_id"],
+                        "model_id": r["model_id"],
+                        "body": r["body"],
                     }
-                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    open_files[date_str].write(
+                        json.dumps(rec, ensure_ascii=False) + "\n"
+                    )
+
+                print(
+                    f"[INFO] Processed {len(results)} rows into {len(open_files)} daily files."
+                )
+
+            finally:
+                # Always close all open file handles
+                for f in open_files.values():
+                    f.close()

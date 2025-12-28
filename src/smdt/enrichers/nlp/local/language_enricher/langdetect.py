@@ -20,6 +20,9 @@ class LanguageDetectionConfig:
     # destination
     output_dir: Optional[str] = None  # required if do_save_to_db == False
 
+    reset_cache: bool = False
+    cache_dir: Optional[str] = None  # optional
+
     def __post_init__(self) -> None:
         self.model_id_postfix = (self.model_id_postfix or "").strip()
 
@@ -73,6 +76,13 @@ class LanguageDetectionEnricher(BaseEnricher):
         self._emoji_tag_re = re.compile(r"<emoji:\s*\w+>")
         self.applied_datetime = datetime.now(timezone.utc)
 
+        # load the cached IDs
+        if self.cfg.reset_cache:
+            self.cached_ids = set()
+            self.reset_cache()
+        else:
+            self.cached_ids = set(self.load_cached_output_ids_from_file())
+
     # ---------------- lifecycle / model ----------------
     def load_model(self) -> None:
         # lazy import to honor `requires`
@@ -80,44 +90,59 @@ class LanguageDetectionEnricher(BaseEnricher):
 
         self._detect_langs = detect_langs  # keep a bound callable
 
-    # ---------------- DB IO ----------------
-    def total_count(self) -> Optional[int]:
-        # How many posts do NOT yet have an entry for our MODEL_ID?
-        q = """
-            SELECT COUNT(*)
-            FROM posts p
-            WHERE p.body IS NOT NULL
-              AND p.body <> ''
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM post_enrichments pe
-                    WHERE pe.post_id = p.post_id
-                      AND pe.model_id = %s
-                )
-        """
-        with self.db.connect(self.db.db_name) as conn, conn.cursor() as cur:
-            cur.execute(q, (self.ENRICHER_ID,))
-            return cur.fetchone()[0]
+    def total_count(self) -> int:
+        where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
+        params = []
+
+        if self.cfg.only_missing:
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.MODEL_ID)
+
+        # Use the real table for exclusion
+        if not self.cfg.reset_cache and self.cached_ids:
+            where_clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM {self.generated_temp_table_name} c WHERE c.post_id = p.post_id::text)"
+            )
+
+        q = f"SELECT COUNT(*) FROM posts p WHERE {' AND '.join(where_clauses)}"
+
+        conn = self.db.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(q, params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+        finally:
+            conn.close()
 
     def fetch_batch(self, offset: int, limit: int) -> List[Dict[str, Any]]:
-        q = """
-            SELECT p.id, p.post_id, p.account_id, p.body, p.created_at, p.retrieved_at
-            FROM posts p
-            WHERE p.body IS NOT NULL
-              AND p.body <> ''
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM post_enrichments pe
-                    WHERE pe.post_id = p.post_id
-                      AND pe.model_id = %s
-                )
-            ORDER BY p.id
-            OFFSET %s LIMIT %s
-        """
-        with self.db.connect(self.db.db_name) as conn, conn.cursor() as cur:
-            cur.execute(q, (self.ENRICHER_ID, offset, limit))
-            cols = [d.name for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+        where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
+        params = []
+
+        if self.cfg.only_missing:
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.MODEL_ID)
+
+        if not self.cfg.reset_cache and self.cached_ids:
+            where_clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM {self.generated_temp_table_name} c WHERE c.post_id = p.post_id::text)"
+            )
+
+        q = f"SELECT p.post_id, p.body, created_at, retrieved_at FROM posts p WHERE {' AND '.join(where_clauses)} ORDER BY p.id OFFSET %s LIMIT %s"
+        params.extend([offset, limit])
+
+        conn = self.db.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(q, params)
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, r)) for r in cur.fetchall()]
+        finally:
+            conn.close()
 
     # ---------------- core processing ----------------
     def process_batch(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -125,6 +150,7 @@ class LanguageDetectionEnricher(BaseEnricher):
         for r in rows:
             post_id = r["post_id"]
             raw_text = r.get("body") or ""
+            created_at = r.get("created_at")
             text = self._preprocess(raw_text)
 
             # skip extremely short strings
@@ -144,9 +170,10 @@ class LanguageDetectionEnricher(BaseEnricher):
 
             out.append(
                 {
+                    "created_at": created_at,
                     "post_id": post_id,
                     "model_id": self.ENRICHER_ID,
-                    "payload": payload,
+                    "body": payload,
                 }
             )
         return out
@@ -167,11 +194,11 @@ class LanguageDetectionEnricher(BaseEnricher):
                 # Uses your resilient COPY → bulk → row-by-row fallback
                 results = [
                     PostEnrichments(
-                        created_at=self.applied_datetime,
+                        created_at=r["created_at"],
                         retrieved_at=self.applied_datetime,
                         post_id=r["post_id"],
                         model_id=r["model_id"],
-                        content=r["content"],  # JSONB
+                        body=r["body"],  # JSONB
                     )
                     for r in results
                 ]
@@ -180,16 +207,48 @@ class LanguageDetectionEnricher(BaseEnricher):
             except Exception as e:
                 print(f"[ERROR] Failed to insert results: {e}")
         else:
-            # Write JSONL file under output_dir
-            path = Path(self.cfg.output_dir) / f"{self.MODEL_ID}.jsonl"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
+            # Grouping results by the created_at day and storing in separate files
+            output_base = Path(self.cfg.output_dir or ".")
+            output_base.mkdir(parents=True, exist_ok=True)
+
+            # Use a dict to keep track of open files to avoid repeated opening/closing
+            open_files = {}
+
+            try:
                 for r in results:
+                    # 1. Extract the date for the filename (Default to 'unknown' if missing)
+                    c_at = r.get("created_at")
+                    date_str = c_at.strftime("%Y-%m-%d") if c_at else "unknown"
+
+                    # 2. Construct filename: e.g., model_name_2023-10-27.jsonl
+                    safe_model_id = self.MODEL_ID.replace("/", "_")
+                    outp = output_base / f"{safe_model_id}_{date_str}.jsonl"
+
+                    # 3. Get or create the file handle
+                    if date_str not in open_files:
+                        open_files[date_str] = outp.open("a", encoding="utf-8")
+
+                    # 4. Prepare and write the record
                     rec = {
-                        "created_at": self.applied_datetime.isoformat(),
-                        "retrieved_at": self.applied_datetime.isoformat(),
-                        "post_id": r.post_id,
-                        "model_id": r.model_id,
-                        "content": r.content,
+                        "created_at": c_at.isoformat() if c_at else None,
+                        "retrieved_at": (
+                            r["retrieved_at"].isoformat()
+                            if r.get("retrieved_at")
+                            else self.applied_datetime.isoformat()
+                        ),
+                        "post_id": r["post_id"],
+                        "model_id": r["model_id"],
+                        "body": r["body"],
                     }
-                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    open_files[date_str].write(
+                        json.dumps(rec, ensure_ascii=False) + "\n"
+                    )
+
+                print(
+                    f"[INFO] Processed {len(results)} rows into {len(open_files)} daily files."
+                )
+
+            finally:
+                # Always close all open file handles
+                for f in open_files.values():
+                    f.close()
