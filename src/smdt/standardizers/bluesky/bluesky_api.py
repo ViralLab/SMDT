@@ -90,9 +90,22 @@ def _post_id_from_uri(uri: Optional[str]) -> Optional[str]:
     """
     if not uri:
         return None
+    # Only accept canonical at:// URIs (or those that start with at:)
+    s = str(uri)
+    if not (s.startswith("at://") or s.startswith("at:")):
+        return None
     try:
-        parts = uri.split("/")
-        return parts[-1] if parts else None
+        parts = s.split("/")
+        # last component should be a non-empty record key
+        if not parts:
+            return None
+        last = parts[-1].strip()
+        if not last:
+            return None
+        # guard against literal sentinel strings that mean missing (e.g. 'None' or '-None')
+        if last.lower() in ("none", "-none"):
+            return None
+        return last
     except Exception:
         return None
 
