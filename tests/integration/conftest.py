@@ -20,6 +20,8 @@ try:
     else:
         load_dotenv(dotenv_path=root / ".env", override=False)
 except Exception:
+    # Best-effort dotenv loading; if python-dotenv is missing or .env files
+    # cannot be processed, fall back to the existing environment variables.
     pass
 
 
