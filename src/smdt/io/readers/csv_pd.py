@@ -10,6 +10,7 @@ from smdt.standardizers.row import Record
 
 class PandasCsvReader(Reader):
     """Reader for CSV/TSV files using pandas."""
+
     name = "csv_pd"
 
     def _pd(self):

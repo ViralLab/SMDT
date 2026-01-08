@@ -10,6 +10,7 @@ from .utils import open_for_reading, maybe_decompress, file_ext
 
 class JsonlReader(Reader):
     """Reader for JSONL (newline-delimited JSON) files."""
+
     name = "jsonl"
 
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:

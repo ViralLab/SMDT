@@ -22,6 +22,7 @@ class Redactor:
         handle_mapper: Function to map user handles.
         map_host: Optional function to map hostnames.
     """
+
     handle_mapper: Callable[[str], str]
     map_host: Optional[Callable[[str], str]] = None
 

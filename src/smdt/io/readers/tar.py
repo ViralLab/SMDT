@@ -9,6 +9,7 @@ from .registry import read_from_filelike
 
 class TarReader(Reader):
     """Reader for tar archives (uncompressed or compressed)."""
+
     name = "tar"
 
     def __init__(

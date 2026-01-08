@@ -26,6 +26,7 @@ class DBConfig:
         connect_timeout: Connection timeout in seconds.
         standard_schema_path: Path to the standard schema SQL file.
     """
+
     default_dbname: str = os.getenv("DEFAULT_DB_NAME", "")
     user: str = os.getenv("DB_USER", "")
     password: str = os.getenv("DB_PASSWORD", "")

@@ -35,7 +35,7 @@ def user_interaction(
     min_weight: Optional[int] = None,
 ) -> NetworkResult:
     """Build a user–user interaction network.
-    
+
     Supported interaction types (case-insensitive):
       QUOTE, SHARE, COMMENT, FOLLOW, BLOCK
 
@@ -49,7 +49,7 @@ def user_interaction(
 
     Returns:
         NetworkResult object containing nodes, edges, and metadata.
-    
+
     Nodes:
       - Accounts
     Edges:
