@@ -1,5 +1,3 @@
-import pytest
-
 from smdt.networks.builders.coaction import CoActionNetworkBuilder
 
 
