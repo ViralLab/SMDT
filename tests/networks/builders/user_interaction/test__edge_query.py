@@ -1,5 +1,3 @@
-import pytest
-
 from smdt.networks.builders.user_interaction import UserInteractionNetworkBuilder
 
 
