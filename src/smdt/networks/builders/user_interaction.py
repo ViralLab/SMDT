@@ -23,6 +23,11 @@ class UserInteractionNetworkBuilder(NetworkBuilder):
     """
 
     def _edge_query(self) -> Tuple[str, Dict[str, Any]]:
+        """Construct the SQL query for user interaction edges.
+
+        Returns:
+            Tuple of (sql_query, parameters).
+        """
         filters: Dict[str, Any] = self.spec.filters
         action_type = self.spec.edge_kind.upper()
 
@@ -57,6 +62,11 @@ class UserInteractionNetworkBuilder(NetworkBuilder):
         return sql, params
 
     def _query_edges(self) -> pd.DataFrame:
+        """Run the query and add edge types.
+
+        Returns:
+            DataFrame of edges with columns: src, dst, weight, edge_type.
+        """
         df = super()._query_edges()
 
         if df.empty:

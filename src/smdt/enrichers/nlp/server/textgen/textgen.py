@@ -50,6 +50,9 @@ class TextGenConfig:
     max_input_chars: int = 8_000  # crude guard; avoids huge prompts
     requests_per_minute: int = 120  # client-side throttle (approximate)
 
+    reset_cache: bool = False
+    cache_dir: Optional[str] = None  # optional
+
     # internal
     _prompt: Optional[PromptTemplate] = None
 
@@ -136,6 +139,14 @@ class TextGenEnricher(BaseEnricher):
             1, min(self.cfg.batch_size, self.cfg.requests_per_minute // 4 or 1)
         )
 
+        # load the cached IDs
+        if self.cfg.reset_cache:
+            self.cached_ids = set()
+            self.reset_cache()
+        else:
+            self.cached_ids = set(self.load_cached_output_ids_from_file())
+            self.setup_cache_table()
+
     async def _ensure_adapter(self) -> None:
         if self._adapter is not None:
             return
@@ -154,49 +165,56 @@ class TextGenEnricher(BaseEnricher):
         pass
 
     # ---- selection ----
-    def total_count(self) -> Optional[int]:
-        q = """
-            SELECT COUNT(*)
-            FROM posts p
-            WHERE p.body IS NOT NULL
-              AND p.body <> ''
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM post_enrichments pe
-                  WHERE pe.post_id = p.id
-                    AND pe.model_id = %s
-              )
-        """
-        conn = self.db.connect(self.db.db_name)
+    def total_count(self) -> int:
+        where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
+        params = []
+
+        if self.cfg.only_missing:
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.MODEL_ID)
+
+        # Use the real table for exclusion
+        if not self.cfg.reset_cache and self.cached_ids:
+            where_clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM {self.generated_temp_table_name} c WHERE c.post_id = p.post_id::text)"
+            )
+
+        q = f"SELECT COUNT(*) FROM posts p WHERE {' AND '.join(where_clauses)}"
+
+        conn = self.db.connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(q, (self.ENRICHER_ID,))
+                cur.execute(q, params)
                 row = cur.fetchone()
-                return int(row[0]) if row and row[0] is not None else 0
+                return int(row[0]) if row else 0
         finally:
             conn.close()
 
     def fetch_batch(self, offset: int, limit: int) -> List[Dict[str, Any]]:
-        q = """
-            SELECT p.id AS post_id, p.body AS body
-            FROM posts p
-            WHERE p.body IS NOT NULL
-              AND p.body <> ''
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM post_enrichments pe
-                  WHERE pe.post_id = p.id
-                    AND pe.model_id = %s
-              )
-            ORDER BY p.id
-            OFFSET %s
-            LIMIT %s
-        """
-        conn = self.db.connect(self.db.db_name)
+        where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
+        params = []
+
+        if self.cfg.only_missing:
+            where_clauses.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.MODEL_ID)
+
+        if not self.cfg.reset_cache and self.cached_ids:
+            where_clauses.append(
+                f"NOT EXISTS (SELECT 1 FROM {self.generated_temp_table_name} c WHERE c.post_id = p.post_id::text)"
+            )
+
+        q = f"SELECT p.post_id, p.body, created_at, retrieved_at FROM posts p WHERE {' AND '.join(where_clauses)} ORDER BY p.id OFFSET %s LIMIT %s"
+        params.extend([offset, limit])
+
+        conn = self.db.connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(q, (self.ENRICHER_ID, offset, limit))
-                cols = [d.name if hasattr(d, "name") else d[0] for d in cur.description]
+                cur.execute(q, params)
+                cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, r)) for r in cur.fetchall()]
         finally:
             conn.close()
@@ -270,13 +288,13 @@ class TextGenEnricher(BaseEnricher):
                 "prompt": res.get("prompt", {}),  # include provenance
             }
             out.append(
-                PostEnrichments(
-                    created_at=self.applied_datetime,
-                    retrieved_at=self.applied_datetime,
-                    post_id=pid,
-                    model_id=self.ENRICHER_ID,
-                    content=payload,  # JSONB
-                )
+                {
+                    "created_at": self.applied_datetime,
+                    "retrieved_at": self.applied_datetime,
+                    "post_id": pid,
+                    "model_id": self.ENRICHER_ID,
+                    "content": payload,  # JSONB
+                }
             )
         return out
 
@@ -290,25 +308,71 @@ class TextGenEnricher(BaseEnricher):
         return self.cfg.batch_size
 
     # ---- persistence ----
-    def save_results(self, results: List[PostEnrichments]) -> None:
+    def save_results(self, results: List[Dict[str, Any]]) -> None:
         if not results:
             return
         if self.cfg.do_save_to_db:
-            self.db.insert_with_fallbacks(results)
+            try:
+                results = [
+                    PostEnrichments(
+                        created_at=r["created_at"],
+                        retrieved_at=self.applied_datetime,
+                        post_id=r["post_id"],
+                        model_id=r["model_id"],
+                        body=r["content"],  # JSONB
+                    )
+                    for r in results
+                ]
+
+                self.db.insert_with_fallbacks(results)
+
+                self.write_current_cache_ids_to_file([r.post_id for r in results])
+            except Exception as e:
+                print(f"[ERROR] Failed to insert results: {e}")
             print(f"[INFO] Saved {len(results)} rows to post_enrichments.")
         else:
-            outp = Path(self.cfg.output_dir or ".") / f"{self.ENRICHER_ID}.jsonl"
-            outp.parent.mkdir(parents=True, exist_ok=True)
-            with outp.open("a", encoding="utf-8") as f:
+            # Grouping results by the created_at day and storing in separate files
+            output_base = Path(self.cfg.output_dir or ".")
+            output_base.mkdir(parents=True, exist_ok=True)
+
+            # Use a dict to keep track of open files to avoid repeated opening/closing
+            open_files = {}
+
+            try:
                 for r in results:
+                    # 1. Extract the date for the filename (Default to 'unknown' if missing)
+                    c_at = r.get("created_at")
+                    date_str = c_at.strftime("%Y-%m-%d") if c_at else "unknown"
+
+                    # 2. Construct filename: e.g., model_name_2023-10-27.jsonl
+                    safe_model_id = self.MODEL_ID.replace("/", "_")
+                    outp = output_base / f"{safe_model_id}_{date_str}.jsonl"
+
+                    # 3. Get or create the file handle
+                    if date_str not in open_files:
+                        open_files[date_str] = outp.open("a", encoding="utf-8")
+
+                    # 4. Prepare and write the record
                     rec = {
-                        "created_at": r.created_at.isoformat(),
+                        "created_at": c_at.isoformat() if c_at else None,
                         "retrieved_at": (
-                            r.retrieved_at.isoformat() if r.retrieved_at else None
+                            r["retrieved_at"].isoformat()
+                            if r.get("retrieved_at")
+                            else self.applied_datetime.isoformat()
                         ),
-                        "post_id": r.post_id,
-                        "model_id": r.model_id,
-                        "content": r.content,
+                        "post_id": r["post_id"],
+                        "model_id": r["model_id"],
+                        "body": r["body"],
                     }
-                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            print(f"[INFO] Wrote {len(results)} rows to {outp}")
+                    open_files[date_str].write(
+                        json.dumps(rec, ensure_ascii=False) + "\n"
+                    )
+
+                print(
+                    f"[INFO] Processed {len(results)} rows into {len(open_files)} daily files."
+                )
+
+            finally:
+                # Always close all open file handles
+                for f in open_files.values():
+                    f.close()

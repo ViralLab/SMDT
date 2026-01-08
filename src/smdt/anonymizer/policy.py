@@ -20,15 +20,51 @@ class AnonPolicy:
     blank_cols: Mapping[str, Set[str]] = field(default_factory=dict)
 
     def is_hash(self, table: str, col: str) -> bool:
+        """Check if a column should be hashed.
+
+        Args:
+            table: Name of the table.
+            col: Name of the column.
+
+        Returns:
+            True if the column should be hashed, False otherwise.
+        """
         return col in self.hash_cols.get(table, set())
 
     def is_redact(self, table: str, col: str) -> bool:
+        """Check if a column should be redacted.
+
+        Args:
+            table: Name of the table.
+            col: Name of the column.
+
+        Returns:
+            True if the column should be redacted, False otherwise.
+        """
         return col in self.redact_cols.get(table, set())
 
     def is_drop(self, table: str, col: str) -> bool:
+        """Check if a column should be dropped.
+
+        Args:
+            table: Name of the table.
+            col: Name of the column.
+
+        Returns:
+            True if the column should be dropped, False otherwise.
+        """
         return col in self.drop_cols.get(table, set())
 
     def is_blank(self, table: str, col: str) -> bool:
+        """Check if a column should be blanked (set to NULL).
+
+        Args:
+            table: Name of the table.
+            col: Name of the column.
+
+        Returns:
+            True if the column should be blanked, False otherwise.
+        """
         return col in self.blank_cols.get(table, set())
 
 

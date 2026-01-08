@@ -73,8 +73,19 @@ DEFAULT_READER_KW: Dict[str, Dict[str, Any]] = {
 
 
 @dataclass
+@dataclass
 class PipelineConfig:
-    """Configuration toggles for the pipeline."""
+    """Configuration toggles for the pipeline.
+
+    Attributes:
+        batch_size: Number of records to process in a single standardizer batch.
+        chunk_size: Number of values to insert into the DB in a single chunk.
+        reader_kwargs: Dictionary of reader-specific keyword arguments.
+        on_conflict: Dictionary mapping model types to on-conflict strategies.
+        progress: Callback function for progress updates.
+        do_sequential: If True, process files sequentially instead of in parallel.
+        num_workers: Number of worker processes to use for parallel processing.
+    """
 
     batch_size: int = 1_000  # records → standardizer batch size
     chunk_size: int = 100_000  # values fallback chunk size for DB
@@ -93,6 +104,14 @@ class PipelineConfig:
 
 
 def _normalize_ext_global(path: str) -> str:
+    """Normalize file extension for global usage.
+
+    Args:
+        path: File path.
+
+    Returns:
+        Normalized extension (lowercase, no dot), or empty string.
+    """
     suffixes = [s.lower() for s in Path(path).suffixes]
     while suffixes and suffixes[-1] in COMPRESSED_SUFFIXES:
         suffixes.pop()
@@ -104,6 +123,16 @@ def _reader_kwargs_for_global(
     reader_name: Optional[str],
     reader_kwargs_cfg: Optional[Dict[str, Dict[str, Any]]],
 ) -> Dict[str, Any]:
+    """Get reader keyword arguments for a file (global version).
+
+    Args:
+        path: File path.
+        reader_name: Name of the reader.
+        reader_kwargs_cfg: Configuration for reader kwargs.
+
+    Returns:
+        Dictionary of reader kwargs.
+    """
     merged: Dict[str, Any] = {}
     ext = _normalize_ext_global(path)
     if ext in DEFAULT_READER_KW:
@@ -117,7 +146,16 @@ def _reader_kwargs_for_global(
 
 
 def _iter_file_records_global(fp, hints, reader_kwargs_cfg):
-    """Iterate (record, SourceInfo) for a plan file, aware of archives."""
+    """Iterate (record, SourceInfo) for a plan file, aware of archives.
+
+    Args:
+        fp: FilePlan object.
+        hints: Hints dictionary.
+        reader_kwargs_cfg: Reader kwargs configuration.
+
+    Yields:
+        Tuple of (record, SourceInfo).
+    """
     if not fp.is_archive:
         src = SourceInfo(path=fp.path, member=None, hints=hints)
         rk = _reader_kwargs_for_global(fp.path, fp.reader_name, reader_kwargs_cfg)
@@ -149,9 +187,15 @@ def _process_file_worker_with_db(
         Standardizer,  # standardizer
     ],
 ) -> Tuple[Mapping[str, int], float, str]:
-    """
-    Worker that processes a single file and writes directly to DB.
+    """Worker that processes a single file and writes directly to DB.
+
     Each worker calls db.connect() to get its own connection.
+
+    Args:
+        args: Tuple containing worker arguments.
+
+    Returns:
+        Tuple of (counters, elapsed_time, file_path).
     """
     (
         fp,
@@ -272,11 +316,19 @@ def run_pipeline(
     config: PipelineConfig | None = None,
     hints: Dict[str, Any] | None = None,
 ) -> None:
-    """
-    Run the pipeline over files in `plan`, standardize records via `standardizer`,
-    and insert models into `db` with fallbacks and on-conflict policies.
+    """Run the pipeline over files in `plan`.
+
+    Standardizes records via `standardizer`, and inserts models into `db`
+    with fallbacks and on-conflict policies.
 
     If `config.do_sequential` is False, use multiprocessing at the *file* level.
+
+    Args:
+        plan: Ingestion plan.
+        db: Database handler.
+        standardizer: Standardizer instance.
+        config: Pipeline configuration.
+        hints: Optional hints dictionary.
     """
     cfg = config or PipelineConfig()
     on_conflict = dict(cfg.on_conflict or {})

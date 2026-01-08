@@ -13,6 +13,13 @@ from smdt.io.readers import get_reader
 
 @dataclass
 class MemberPlan:
+    """Plan for a single member within an archive.
+
+    Attributes:
+        name: Path inside the archive.
+        reader_name: Name of the reader that will handle this member.
+        included: Whether this member is included after filtering.
+    """
     name: str  # path inside archive
     reader_name: Optional[str]  # which reader will handle this member
     included: bool  # after include/exclude filters
@@ -20,6 +27,16 @@ class MemberPlan:
 
 @dataclass
 class FilePlan:
+    """Plan for a single file.
+
+    Attributes:
+        path: File path.
+        size: File size in bytes.
+        mtime: Modification time timestamp.
+        reader_name: Name of the reader, or None if no reader found.
+        is_archive: Whether the file is an archive.
+        members: List of member plans if the file is an archive.
+    """
     path: str
     size: int
     mtime: float
@@ -29,14 +46,25 @@ class FilePlan:
 
     @property
     def display_mtime(self) -> str:
+        """Get a human-readable modification time string."""
         return datetime.fromtimestamp(self.mtime).isoformat(timespec="seconds")
 
 
 @dataclass
 class Plan:
+    """Ingestion plan containing a list of files to process.
+
+    Attributes:
+        files: List of file plans.
+    """
     files: List[FilePlan]
 
     def summary(self) -> Dict[str, int]:
+        """Generate a summary of the plan by reader type.
+
+        Returns:
+            Dictionary mapping reader names to file counts.
+        """
         by_reader: Dict[str, int] = {}
         for fp in self.files:
             if fp.is_archive:
@@ -52,6 +80,16 @@ class Plan:
 def _want(
     name: str, include: Optional[Tuple[str, ...]], exclude: Optional[Tuple[str, ...]]
 ) -> bool:
+    """Check if a name matches inclusion/exclusion patterns.
+
+    Args:
+        name: Name to check.
+        include: Tuple of inclusion patterns.
+        exclude: Tuple of exclusion patterns.
+
+    Returns:
+        True if the name should be included, False otherwise.
+    """
     if include:
         if not any(fnmatch(name, pat) for pat in include):
             return False
@@ -62,6 +100,14 @@ def _want(
 
 
 def _list_zip_members(p: Path) -> List[str]:
+    """List members of a zip file.
+
+    Args:
+        p: Path to the zip file.
+
+    Returns:
+        List of member filenames.
+    """
     try:
         with zipfile.ZipFile(p, "r") as zf:
             return [i.filename for i in zf.infolist() if not i.is_dir()]
@@ -70,6 +116,14 @@ def _list_zip_members(p: Path) -> List[str]:
 
 
 def _list_tar_members(p: Path) -> List[str]:
+    """List members of a tar file.
+
+    Args:
+        p: Path to the tar file.
+
+    Returns:
+        List of member filenames.
+    """
     try:
         with tarfile.open(p, "r:*") as tf:
             return [m.name for m in tf.getmembers() if m.isfile()]
@@ -78,6 +132,15 @@ def _list_tar_members(p: Path) -> List[str]:
 
 
 def _rank(name: str, patterns: Optional[Tuple[str, ...]]) -> int:
+    """Rank a name based on its position in a list of patterns.
+
+    Args:
+        name: Name to rank.
+        patterns: Tuple of patterns.
+
+    Returns:
+        Rank index (lower is better), or a large number if not found.
+    """
     if not patterns:
         return 10**9
     for i, pat in enumerate(patterns):
@@ -96,6 +159,20 @@ def plan_directories(
     member_include: Optional[Iterable[str]] = None,  # NEW: member-only include
     member_exclude: Optional[Iterable[str]] = None,  # NEW: member-only exclude
 ) -> Plan:
+    """Create an ingestion plan by scanning directories.
+
+    Args:
+        roots: Iterable of root directories to scan.
+        include: Optional patterns to include files.
+        exclude: Optional patterns to exclude files.
+        order: Optional patterns to order files.
+        member_order: Optional patterns to order archive members.
+        member_include: Optional patterns to include archive members.
+        member_exclude: Optional patterns to exclude archive members.
+
+    Returns:
+        Ingestion Plan object.
+    """
     inc = tuple(include) if include else None
     exc = tuple(exclude) if exclude else None
     ordp = tuple(order) if order else None
@@ -168,6 +245,11 @@ def plan_directories(
 
 
 def print_plan(plan: Plan) -> None:
+    """Print the ingestion plan to stdout.
+
+    Args:
+        plan: Ingestion Plan object.
+    """
     # ANSI color codes
     GREEN = "\033[92m"
     RED = "\033[91m"

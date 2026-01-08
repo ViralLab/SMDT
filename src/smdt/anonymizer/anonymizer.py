@@ -24,6 +24,21 @@ logging.basicConfig(
 
 @dataclass
 class AnonymizeConfig:
+    """Configuration for the anonymization process.
+
+    Attributes:
+        src_db_name: Name of the source database.
+        dst_db_name: Name of the destination database.
+        pepper: Secret pepper for hashing.
+        algorithm: Hashing algorithm to use.
+        output_hex_len: Length of the output hex string.
+        schema_package: Package containing the schema resource.
+        schema_resource: Name of the schema resource file.
+        time_window: Optional tuple of (start, end) ISO strings for filtering by created_at.
+        chunk_rows: Number of rows to process in each batch.
+        owner_schema: Optional owner schema for the destination database.
+        ask_reinit: Whether to ask for confirmation before reinitializing the destination schema.
+    """
     src_db_name: str
     dst_db_name: str
     pepper: bytes
@@ -40,9 +55,20 @@ class AnonymizeConfig:
 
 
 class Anonymizer:
-    """ETL: read from raw DB, transform, write to anonymized DB."""
+    """ETL: read from raw DB, transform, write to anonymized DB.
+
+    This class handles the entire anonymization process, including reading from the
+    source database, applying anonymization policies (hashing, redaction, etc.),
+    and writing to the destination database.
+    """
 
     def __init__(self, cfg: AnonymizeConfig, policy: AnonPolicy = DEFAULT_POLICY):
+        """Initialize the Anonymizer.
+
+        Args:
+            cfg: Configuration for the anonymization process.
+            policy: Anonymization policy to apply.
+        """
         self.cfg = cfg
         self.policy = policy
         self.src = StandardDB(cfg.src_db_name)
@@ -63,6 +89,11 @@ class Anonymizer:
         )
 
     def prepare_destination(self) -> None:
+        """Initialize the destination database schema.
+
+        This method initializes the destination database and applies the
+        anonymization schema.
+        """
         from importlib import resources as _res
 
         self.dst.init_db()
@@ -72,6 +103,12 @@ class Anonymizer:
             self.dst.init_schema(str(p))
 
     def run(self) -> None:
+        """Run the anonymization process for all configured tables.
+
+        This method iterates through a predefined list of tables, copies data
+        from the source to the destination, applying anonymization transformations
+        along the way.
+        """
         self._ensure_prepared()
         log.info("Starting anonymization…")
         for table in [
@@ -88,6 +125,12 @@ class Anonymizer:
             log.info("Finished %s: %d rows in %.2fs", table, rows, time.time() - start)
 
     def _ensure_prepared(self) -> None:
+        """Ensure the destination database is prepared.
+
+        Checks if the destination database already has the required tables.
+        If not, it initializes the schema. If it does, it may ask the user
+        whether to reinitialize, depending on configuration.
+        """
         from importlib import resources as _res
         import sys
 
@@ -150,6 +193,14 @@ class Anonymizer:
         log.info("Applied anon schema to destination database.")
 
     def _select_iter(self, table: str) -> Iterable[Dict[str, Any]]:
+        """Iterate over rows from the source table.
+
+        Args:
+            table: Name of the table to read from.
+
+        Yields:
+            Dictionary representing a row from the table.
+        """
         conn = self.src.connect(self.cfg.src_db_name)
         try:
             with conn.cursor(row_factory=dict_row) as cur:  # psycopg3 row→dict
@@ -174,6 +225,15 @@ class Anonymizer:
             conn.close()
 
     def _has_col(self, table: str, col: str) -> bool:
+        """Check if a table has a specific column.
+
+        Args:
+            table: Name of the table.
+            col: Name of the column.
+
+        Returns:
+            True if the table has the column, False otherwise.
+        """
         for cls, meta in MODEL_REGISTRY.items():
             if meta.get("table") == table:
                 cols = set(
@@ -183,6 +243,15 @@ class Anonymizer:
         return False
 
     def _transform_row(self, table: str, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform a single row according to the anonymization policy.
+
+        Args:
+            table: Name of the table the row belongs to.
+            row: Dictionary representing the row data.
+
+        Returns:
+            Transformed row dictionary.
+        """
         out: Dict[str, Any] = {}
         if table == "entities":
             et = row.get("entity_type")
@@ -219,6 +288,18 @@ class Anonymizer:
         return out
 
     def _row_to_model(self, table: str, row: Dict[str, Any]) -> Any:
+        """Convert a row dictionary to a model instance.
+
+        Args:
+            table: Name of the table.
+            row: Dictionary representing the row data.
+
+        Returns:
+            Model instance corresponding to the row.
+
+        Raises:
+            KeyError: If no model is registered for the table.
+        """
         model_cls = None
         for cls, meta in MODEL_REGISTRY.items():
             if meta.get("table") == table:
@@ -233,6 +314,14 @@ class Anonymizer:
         return model_cls(**row)
 
     def _copy_table(self, table: str) -> int:
+        """Copy and anonymize a table from source to destination.
+
+        Args:
+            table: Name of the table to copy.
+
+        Returns:
+            Number of rows copied.
+        """
         buf: List[Any] = []
         count = 0
         t0 = time.time()
@@ -269,6 +358,14 @@ class Anonymizer:
         return count
 
     def _insert_columns_for_table(self, table: str) -> List[str]:
+        """Get the list of columns to insert for a table.
+
+        Args:
+            table: Name of the table.
+
+        Returns:
+            List of column names.
+        """
         for cls, meta in MODEL_REGISTRY.items():
             if meta.get("table") == table:
                 sample = getattr(cls, "insert_columns", None)
@@ -277,6 +374,12 @@ class Anonymizer:
         return []
 
     def _flush(self, table: str, items: List[Any]) -> None:
+        """Flush a batch of items to the destination database.
+
+        Args:
+            table: Name of the table.
+            items: List of model instances to insert.
+        """
         on_conflict = None
         if table == "accounts":
             on_conflict = "(created_at, id) DO NOTHING"

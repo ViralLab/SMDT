@@ -17,7 +17,14 @@ _HASHTAG_RE = re.compile(r"(?<!\w)#(?P<tag>[A-Za-z0-9_]{1,100})(?![A-Za-z0-9_])"
 
 
 def _to_text(x) -> str:
-    """Coerce arbitrary values (incl. pandas NaN) to a safe string for regex."""
+    """Coerce arbitrary values (incl. pandas NaN) to a safe string for regex.
+
+    Args:
+        x: Value to convert.
+
+    Returns:
+        String representation, or empty string for None/NaN.
+    """
     if isinstance(x, str):
         return x
     if x is None:
@@ -32,6 +39,14 @@ def _to_text(x) -> str:
 
 
 def _uniq(seq: List[str]) -> List[str]:
+    """Remove duplicates while preserving order.
+
+    Args:
+        seq: List of strings.
+
+    Returns:
+        List with duplicates removed, preserving order.
+    """
     seen, out = set(), []
     for x in seq:
         if x not in seen:
@@ -41,6 +56,15 @@ def _uniq(seq: List[str]) -> List[str]:
 
 
 def extract_emails(text: str, lowercase: bool = True) -> List[str]:
+    """Extract email addresses from text.
+
+    Args:
+        text: Text to extract emails from.
+        lowercase: Whether to lowercase emails.
+
+    Returns:
+        List of unique email addresses.
+    """
     text = _to_text(text)
     emails = [m.group(1) for m in _EMAIL_RE.finditer(text or "")]
     if lowercase:
@@ -49,6 +73,15 @@ def extract_emails(text: str, lowercase: bool = True) -> List[str]:
 
 
 def extract_mentions(text: str, lowercase: bool = True) -> List[str]:
+    """Extract @mentions from text.
+
+    Args:
+        text: Text to extract mentions from.
+        lowercase: Whether to lowercase mentions.
+
+    Returns:
+        List of unique mentions (without @ symbol).
+    """
     text = _to_text(text)
     mentions = [m.group("user") for m in _MENTION_RE.finditer(text or "")]
     if lowercase:
@@ -57,6 +90,15 @@ def extract_mentions(text: str, lowercase: bool = True) -> List[str]:
 
 
 def extract_hashtags(text: str, lowercase: bool = True) -> List[str]:
+    """Extract #hashtags from text.
+
+    Args:
+        text: Text to extract hashtags from.
+        lowercase: Whether to lowercase hashtags.
+
+    Returns:
+        List of unique hashtags (without # symbol).
+    """
     text = _to_text(text)
     tags = [m.group("tag") for m in _HASHTAG_RE.finditer(text or "")]
     if lowercase:
@@ -72,6 +114,19 @@ def extract_hashtags(text: str, lowercase: bool = True) -> List[str]:
 def extract_urls(
     text: str, ensure_scheme: bool = True, unique: bool = True
 ) -> List[str]:
+    """Extract URLs from text using urlextract.
+
+    Args:
+        text: Text to extract URLs from.
+        ensure_scheme: Whether to prepend http:// if scheme is missing.
+        unique: Whether to deduplicate URLs.
+
+    Returns:
+        List of URLs.
+
+    Raises:
+        ImportError: If urlextract is not installed.
+    """
     try:
         from urlextract import URLExtract
     except ImportError as e:
@@ -106,6 +161,14 @@ def extract_urls(
 
 
 def extract_all(text: str) -> Dict[str, List[str]]:
+    """Extract all entity types from text.
+
+    Args:
+        text: Text to extract from.
+
+    Returns:
+        Dictionary with keys: emails, urls, mentions, hashtags.
+    """
     return {
         "emails": extract_emails(text),
         "urls": extract_urls(text),

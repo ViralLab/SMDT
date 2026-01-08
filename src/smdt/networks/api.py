@@ -34,12 +34,22 @@ def user_interaction(
     weighting: Weighting = "count",
     min_weight: Optional[int] = None,
 ) -> NetworkResult:
-    """
-    Build a user–user interaction network.
-
+    """Build a user–user interaction network.
+    
     Supported interaction types (case-insensitive):
       QUOTE, SHARE, COMMENT, FOLLOW, BLOCK
 
+    Args:
+        db: StandardDB instance.
+        interaction: Type of interaction (e.g., "QUOTE", "SHARE").
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        weighting: "count" or "binary".
+        min_weight: Optional minimum weight threshold.
+
+    Returns:
+        NetworkResult object containing nodes, edges, and metadata.
+    
     Nodes:
       - Accounts
     Edges:
@@ -86,9 +96,19 @@ def iter_user_interaction_edges(
     end_time: Optional[datetime] = None,
     chunksize: int = 100_000,
 ) -> Iterator[pd.DataFrame]:
-    """
-    Stream edges for a user–user interaction network.
+    """Stream edges for a user–user interaction network.
+
     Yields DataFrame chunks with columns: src, dst, weight.
+
+    Args:
+        db: StandardDB instance.
+        interaction: Type of interaction.
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        chunksize: Number of edges per chunk.
+
+    Yields:
+        DataFrame chunk of edges.
     """
     interaction_norm = interaction.strip().upper()
     if interaction_norm not in _ALLOWED_INTERACTIONS:
@@ -125,11 +145,21 @@ def entity_cooccurrence(
     weighting: Weighting = "count",
     min_weight: Optional[int] = None,
 ) -> NetworkResult:
-    """
-    Build an entity–entity co-occurrence network.
+    """Build an entity–entity co-occurrence network.
 
     Supported entity types:
       HASHTAG, USER_TAG, LINK, EMAIL, IMAGE, VIDEO
+
+    Args:
+        db: StandardDB instance.
+        entity_type: Type of entity.
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        weighting: "count" or "binary".
+        min_weight: Optional minimum weight threshold.
+
+    Returns:
+        NetworkResult object.
     """
     entity_norm = entity_type.strip().upper()
     if entity_norm not in _ALLOWED_ENTITY_TYPES:
@@ -175,12 +205,23 @@ def bipartite(
     weighting: Weighting = "count",
     min_weight: Optional[int] = None,
 ) -> NetworkResult:
-    """
-    Build a bipartite network.
+    """Build a bipartite network.
 
     Supported combinations:
       - left='account', right in {'HASHTAG','USER_TAG','LINK','EMAIL','IMAGE','VIDEO'}
       - left='post',    right in {'HASHTAG','USER_TAG','LINK','EMAIL','IMAGE','VIDEO'}
+
+    Args:
+        db: StandardDB instance.
+        left: Left node type ("account" or "post").
+        right: Right node type (entity type).
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        weighting: "count" or "binary".
+        min_weight: Optional minimum weight threshold.
+
+    Returns:
+        NetworkResult object.
 
     Nodes:
       - left nodes: accounts or posts
@@ -226,9 +267,20 @@ def iter_bipartite_edges(
     end_time: Optional[datetime] = None,
     chunksize: int = 100_000,
 ) -> Iterator[pd.DataFrame]:
-    """
-    Stream edges for a bipartite network in chunks.
+    """Stream edges for a bipartite network in chunks.
+
     Yields DataFrames with columns: src, dst, weight.
+
+    Args:
+        db: StandardDB instance.
+        left: Left node type.
+        right: Right node type.
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        chunksize: Number of edges per chunk.
+
+    Yields:
+        DataFrame chunk of edges.
     """
     left_norm = left.lower()
     right_norm = right.strip().upper()
@@ -262,6 +314,21 @@ def coaction(
     weighting="count",
     directed=False,
 ) -> NetworkResult:
+    """Build a co-action network.
+
+    Connects users who performed the same action on the same object.
+
+    Args:
+        db: StandardDB instance.
+        action: Action type.
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        weighting: "count" or "binary".
+        directed: Whether the network is directed.
+
+    Returns:
+        NetworkResult object.
+    """
     filters: Dict[str, Any] = {}
     if start_time is not None:
         filters["start_time"] = start_time
@@ -283,6 +350,18 @@ def coaction(
 def iter_coaction_edges(
     db, action: str, *, start_time=None, end_time=None, chunksize=100_000
 ):
+    """Stream edges for a co-action network.
+
+    Args:
+        db: StandardDB instance.
+        action: Action type.
+        start_time: Optional start time filter.
+        end_time: Optional end time filter.
+        chunksize: Number of edges per chunk.
+
+    Yields:
+        DataFrame chunk of edges.
+    """
     filters = {}
     if start_time is not None:
         filters["start_time"] = start_time
@@ -310,12 +389,19 @@ def _iter_time_windows(
     end_time: datetime,
     step: timedelta,
 ):
-    """
-    Yield half-open time windows [t_i, t_{i+1}) from start_time to end_time.
+    """Yield half-open time windows [t_i, t_{i+1}) from start_time to end_time.
 
     Example:
         for ws, we in _iter_time_windows(t0, t1, timedelta(hours=1)):
             ...
+
+    Args:
+        start_time: Start datetime.
+        end_time: End datetime.
+        step: Time step (timedelta).
+
+    Yields:
+        Tuple of (window_start, window_end).
     """
     current = start_time
     while current < end_time:

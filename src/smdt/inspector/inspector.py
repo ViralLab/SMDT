@@ -51,10 +51,12 @@ def _color_pct(p: Optional[float]) -> str:
 
 
 def _color_table(name: str) -> str:
+    """Colorize table name."""
     return f"{Fore.CYAN}{name}{Style.RESET_ALL}"
 
 
 def _dim(s: str) -> str:
+    """Dim the string."""
     return f"{Style.DIM}{s}{Style.RESET_ALL}"
 
 
@@ -64,10 +66,12 @@ def _vislen(s: str) -> int:
 
 
 def _rpad_ansi(s: str, width: int) -> str:
+    """Right-pad string with spaces, accounting for ANSI codes."""
     return s + " " * max(0, width - _vislen(s))
 
 
 def _lpad_ansi(s: str, width: int) -> str:
+    """Left-pad string with spaces, accounting for ANSI codes."""
     return " " * max(0, width - _vislen(s)) + s
 
 
@@ -85,10 +89,12 @@ def _norm_tbl_name(name: str) -> str:
 
 
 def psql_ident(ident: str) -> str:
+    """Quote a PostgreSQL identifier."""
     return '"' + ident.replace('"', '""') + '"'
 
 
 def psql_ident_full(schema: str, table: str) -> str:
+    """Quote a full PostgreSQL identifier (schema.table)."""
     return f"{psql_ident(schema)}.{psql_ident(table)}"
 
 
@@ -101,6 +107,13 @@ class Inspector:
     """Database schema/data inspector with completeness & enum stats."""
 
     def __init__(self, db, schema: str, *, max_enum_items: int = 8):
+        """Initialize the Inspector.
+
+        Args:
+            db: Database connection or handler.
+            schema: Schema name to inspect.
+            max_enum_items: Maximum number of enum items to collect stats for.
+        """
         self.db = db
         self.schema = schema
         self.max_enum_items = max_enum_items
@@ -205,6 +218,16 @@ class Inspector:
     # Helpers
     # ---------------------------------------------------------
     def _is_enum_or_domain_enum(self, cur, typtype: str, atttypid: int) -> bool:
+        """Check if a type is an enum or a domain over an enum.
+
+        Args:
+            cur: Database cursor.
+            typtype: Type type code.
+            atttypid: Attribute type ID.
+
+        Returns:
+            True if the type is an enum or domain over enum, False otherwise.
+        """
         if typtype == "e":  # enum
             return True
         if typtype == "d":  # domain -> base type
@@ -227,6 +250,18 @@ class Inspector:
         *,
         limit: int = 8,
     ) -> List[Tuple[str, int, float]]:
+        """Get value counts for a column.
+
+        Args:
+            cur: Database cursor.
+            table: Table name.
+            column: Column name.
+            total_rows: Total rows in the table.
+            limit: Maximum number of values to return.
+
+        Returns:
+            List of (value, count, percentage) tuples.
+        """
         if total_rows <= 0:
             return []
         cur.execute(
@@ -321,6 +356,13 @@ def report_schemas(
     only_tables: Optional[List[str]] = None,
     show_counts: bool = True,  # applies to enum rows; completeness always shows (nn/total)
 ) -> None:
+    """Generate and print a schema report.
+
+    Args:
+        inspectors: List of Inspector instances.
+        only_tables: Optional list of tables to include.
+        show_counts: Whether to show counts in enum stats.
+    """
     allow = {_norm_tbl_name(t) for t in only_tables} if only_tables else None
 
     # Collect snapshots and labels

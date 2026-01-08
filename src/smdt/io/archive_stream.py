@@ -24,9 +24,20 @@ def _yield_from_filelike(
     reader_kwargs_for: ReaderKwargsFn,
     reader_name_fallback: str | None,
 ) -> Iterator[Record]:
-    """
-    Stream records from a file-like object using the registry handoff.
+    """Stream records from a file-like object using the registry handoff.
+
     Ensures nested compression is handled via member_name.
+
+    Args:
+        archive_path: Path to the archive file.
+        member_name: Name of the member within the archive.
+        file_like: File-like object for the member.
+        hints: Optional hints dictionary.
+        reader_kwargs_for: Function to resolve reader kwargs.
+        reader_name_fallback: Optional fallback reader name.
+
+    Yields:
+        Tuple of (record, SourceInfo).
     """
     # Derive sub-reader name hint (if any) and resolve kwargs
     sub_reader_name = reader_name_fallback
@@ -48,24 +59,20 @@ def stream_archive_records(
     reader_kwargs_for: ReaderKwargsFn,
     reader_name_fallback: str | None,
 ) -> Iterator[Record]:
-    """
-    Yield (record, SourceInfo) for each included archive member in the given order.
+    """Yield (record, SourceInfo) for each included archive member in the given order.
 
-    Parameters
-    ----------
-    archive_path : str
-        Path to the .zip or .tar.* archive on disk.
-    members : Iterable[Any]
-        Iterable of plan members with attributes:
+    Args:
+        archive_path: Path to the .zip or .tar.* archive on disk.
+        members: Iterable of plan members with attributes:
           - m.name : str
           - m.included : bool
           - m.reader_name : Optional[str]  (hint; not required)
-    hints : Optional[Dict[str, Any]]
-        Extra metadata propagated into SourceInfo.
-    reader_kwargs_for : Callable[[member_path, reader_name], dict]
-        Resolves reader kwargs by extension/reader name.
-    reader_name_fallback : Optional[str]
-        Reader name from the parent file plan, used as a hint.
+        hints: Extra metadata propagated into SourceInfo.
+        reader_kwargs_for: Resolves reader kwargs by extension/reader name.
+        reader_name_fallback: Reader name from the parent file plan, used as a hint.
+
+    Yields:
+        Tuple of (record, SourceInfo).
     """
     lower = archive_path.lower()
 

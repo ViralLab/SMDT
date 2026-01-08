@@ -21,6 +21,14 @@ class BipartiteNetworkBuilder(NetworkBuilder):
     """
 
     def _edge_query(self) -> Tuple[str, Dict[str, Any]]:
+        """Construct the SQL query for bipartite edges.
+
+        Returns:
+            Tuple of (sql_query, parameters).
+
+        Raises:
+            NotImplementedError: If the left/right combination is not supported.
+        """
         filters: Dict[str, Any] = self.spec.filters
         left = filters.get("left", "account").lower()
         right = filters.get("right", "hashtag").lower()
@@ -96,6 +104,11 @@ class BipartiteNetworkBuilder(NetworkBuilder):
         return sql, params
 
     def _query_edges(self) -> pd.DataFrame:
+        """Run the query and add edge types.
+
+        Returns:
+            DataFrame of edges with columns: src, dst, weight, edge_type.
+        """
         df = super()._query_edges()
         if df.empty:
             return df
@@ -110,6 +123,14 @@ class BipartiteNetworkBuilder(NetworkBuilder):
         return df[["src", "dst", "weight", "edge_type"]]
 
     def _derive_nodes(self, edges: pd.DataFrame) -> pd.DataFrame:
+        """Derive nodes from edges, distinguishing left and right partitions.
+
+        Args:
+            edges: DataFrame of edges.
+
+        Returns:
+            DataFrame of nodes with columns: node_id, bipartite, type.
+        """
         if edges.empty:
             return pd.DataFrame(columns=["node_id", "bipartite", "type"])
 

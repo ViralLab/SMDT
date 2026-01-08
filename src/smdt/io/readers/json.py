@@ -25,18 +25,33 @@ class JsonReader(Reader):
     # -------------------- detection --------------------
 
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
+        """Check if the reader supports the given URI.
+
+        Supports .json and its compressed variants.
+
+        Args:
+            uri: URI to check.
+            content_type: Optional content type hint.
+
+        Returns:
+            True if supported, False otherwise.
+        """
         ext = file_ext(uri)
         return ext.endswith((".json", ".json.gz", ".json.bz2", ".json.xz", ".json.zst"))
 
     # -------------------- path-based --------------------
 
     def stream(self, uri: str, **kwargs) -> Iterable[Mapping[str, Any]]:
-        """
-        Kwargs:
-          - stream_array: bool = False
-              If True, stream a top-level array using ijson.
-          - ijson_prefix: str = "item"
-              Prefix passed to ijson.items() when streaming arrays.
+        """Stream records from a JSON file.
+
+        Args:
+            uri: URI to read from.
+            **kwargs: Additional arguments.
+                stream_array (bool): If True, stream a top-level array using ijson.
+                ijson_prefix (str): Prefix passed to ijson.items() when streaming arrays.
+
+        Yields:
+            Dictionary representing a record.
         """
         stream_array: bool = kwargs.pop("stream_array", False)
         ijson_prefix: str = kwargs.pop("ijson_prefix", "item")
@@ -58,9 +73,17 @@ class JsonReader(Reader):
     def stream_from_filelike(
         self, f: BinaryIO, **kwargs
     ) -> Iterable[Mapping[str, Any]]:
-        """
+        """Stream records from a file-like object.
+
         Handle already-opened binary file-like (e.g., from .tar or .zip).
         Automatically decompresses based on member_name if needed.
+
+        Args:
+            f: File-like object.
+            **kwargs: Additional arguments.
+
+        Yields:
+            Dictionary representing a record.
         """
         stream_array: bool = kwargs.pop("stream_array", False)
         ijson_prefix: str = kwargs.pop("ijson_prefix", "item")
@@ -77,10 +100,20 @@ class JsonReader(Reader):
     # -------------------- internals --------------------
 
     def _load_entire_doc(self, bin_f: BinaryIO) -> Iterable[Mapping[str, Any]]:
-        """
-        Load full JSON document (via json_repair) and yield:
-          - each item if top-level list
-          - the object itself if dict
+        """Load full JSON document (via json_repair) and yield items.
+
+        Yields:
+            - each item if top-level list
+            - the object itself if dict
+
+        Args:
+            bin_f: Binary file object.
+
+        Yields:
+            Dictionary representing a record.
+
+        Raises:
+            ValueError: If the top-level JSON type is not a list or dict.
         """
         text_stream = io.TextIOWrapper(bin_f, encoding="utf-8")
         data = json_repair.load(text_stream)
@@ -96,8 +129,17 @@ class JsonReader(Reader):
     def _stream_array_with_ijson(
         self, bin_f: BinaryIO, prefix: str
     ) -> Iterable[Mapping[str, Any]]:
-        """
-        Stream large top-level arrays safely using ijson.items().
+        """Stream large top-level arrays safely using ijson.items().
+
+        Args:
+            bin_f: Binary file object.
+            prefix: ijson prefix string.
+
+        Yields:
+            Dictionary representing a record.
+
+        Raises:
+            MissingOptionalDependency: If ijson is not installed.
         """
         try:
             import ijson
