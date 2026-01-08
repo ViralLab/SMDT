@@ -1,3 +1,4 @@
+"""Integration tests for Actions model with database."""
 import pytest
 
 MODELS = True
@@ -9,6 +10,7 @@ except Exception:
 
 @pytest.mark.skipif(not MODELS, reason="Actions model not importable")
 def test_actions_check_and_enum(conn, now):
+    """Insert an action and verify enum is stored correctly."""
     a = Actions(
         created_at=now,
         action_type="follow",
@@ -24,12 +26,13 @@ def test_actions_check_and_enum(conn, now):
     conn.commit()
     with conn.cursor() as cur:
         cur.execute("SELECT action_type FROM actions")
-        assert cur.fetchone()[0] == "FOLLOW"
+        result = cur.fetchone()[0]
+    assert result == "FOLLOW"
 
 
 @pytest.mark.skipif(not MODELS, reason="Actions model not importable")
 def test_actions_python_mirrors_check(conn, now):
-    from datetime import timezone, datetime
+    """Python model should enforce originator requirement."""
     from smdt.store.models.actions import Actions
 
     with pytest.raises(ValueError, match="originator"):
