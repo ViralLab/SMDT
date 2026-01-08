@@ -1,4 +1,5 @@
 """Integration tests for Posts model with database."""
+
 import pytest
 
 MODELS = True

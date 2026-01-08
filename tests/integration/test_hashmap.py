@@ -1,4 +1,5 @@
 """Integration tests for HashMap model with database."""
+
 import pytest
 import psycopg
 

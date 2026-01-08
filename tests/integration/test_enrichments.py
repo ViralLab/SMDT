@@ -1,4 +1,5 @@
 """Integration tests for Enrichment models with database."""
+
 import pytest
 import psycopg
 from psycopg.types.json import Jsonb

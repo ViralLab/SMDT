@@ -1,4 +1,5 @@
 """Integration tests for Actions model with database."""
+
 import pytest
 
 MODELS = True

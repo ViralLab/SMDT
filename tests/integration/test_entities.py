@@ -1,4 +1,5 @@
 """Integration tests for Entities model with database."""
+
 import pytest
 from psycopg.types.json import Jsonb
 

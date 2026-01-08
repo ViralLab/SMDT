@@ -3,6 +3,7 @@ Shared fixtures for integration tests requiring a database.
 
 All tests in this directory are automatically marked with `@pytest.mark.integration`.
 """
+
 import os
 import uuid
 from pathlib import Path

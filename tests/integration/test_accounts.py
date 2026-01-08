@@ -1,4 +1,5 @@
 """Integration tests for Accounts model with database."""
+
 import pytest
 from datetime import timezone, datetime
 

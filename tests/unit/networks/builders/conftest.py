@@ -24,4 +24,3 @@ def Weighted_network_spec():
             self.filters = filters or {"left": "account", "right": "hashtag"}
 
     return _Spec
-
