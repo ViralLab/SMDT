@@ -313,12 +313,29 @@ class TruthSocialStandardizer(Standardizer):
             if not (origin_post and origin_user and ext_id):
                 return outputs
 
-            target_post = self.truthid_by_external.get(
-                ext_id
-            )  # present after truths.tsv
+            # allow tests or external code to pre-populate either
+            # the 'truthid_by_external' map or a legacy/private '_external_id_map'
+            external_map = getattr(self, "truthid_by_external", None) or getattr(
+                self, "_external_id_map", None
+            )
+            if external_map is None:
+                external_map = {}
 
-            created_at = self.truth2created_at.get(origin_post)
+            target_post = external_map.get(
+                ext_id
+            )  # present after truths.tsv or prepopulated
+
+            # Prefer the original truth's created_at if known; fall back to scraped time so
+            # we still emit an action when only the external mapping is present (tests expect this).
+            created_at = (
+                self.truth2created_at.get(origin_post)
+                if hasattr(self, "truth2created_at")
+                else None
+            )
             retrieved_at = _dt(record.get("time_scraped"))
+            if not created_at:
+                created_at = retrieved_at
+
             if created_at:
                 outputs.append(
                     Actions(
