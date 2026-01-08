@@ -11,7 +11,6 @@ Run selectively:
   pytest -m "not integration"            # exclude integration tests
   pytest                                 # everything
 """
-import pytest
 
 
 def pytest_configure(config):
