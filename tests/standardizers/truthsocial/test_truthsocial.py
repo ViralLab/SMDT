@@ -107,7 +107,7 @@ def test_replies_populates_map():
     std = TruthSocialStandardizer()
     src_r = SourceInfo(path="replies.tsv", member="replies.tsv")
     row = {"replying_user": "u2", "replied_user": "u1"}
-    result = std.standardize((row, src_r))
+    std.standardize((row, src_r))
     # ensure we called the standardize function and that the side effect occurred
     assert "u2" in std.replied_user_by_replying_user
     assert std.replied_user_by_replying_user.get("u2") == "u1"
