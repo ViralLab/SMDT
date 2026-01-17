@@ -1,4 +1,7 @@
-import pytest, psycopg
+"""Integration tests for Enrichment models with database."""
+
+import pytest
+import psycopg
 from psycopg.types.json import Jsonb
 
 MODELS = True
@@ -20,6 +23,7 @@ def _adapt_jsonb(cols, vals, jsonb_cols=("body",)):
 
 @pytest.mark.skipif(not MODELS, reason="Enrichment models not importable")
 def test_account_enrichments_unique_and_conflict(conn, now):
+    """AccountEnrichments UNIQUE constraint on (model_id, account_id) should be enforced."""
     e1 = AccountEnrichments(
         model_id="m1", account_id="a1", body={"x": 1}, created_at=now
     )
@@ -56,11 +60,12 @@ def test_account_enrichments_unique_and_conflict(conn, now):
             "ON CONFLICT (model_id, account_id) DO NOTHING",
             vals2,
         )
-    conn.commit()
+    result = conn.commit()
 
 
 @pytest.mark.skipif(not MODELS, reason="Enrichment models not importable")
 def test_post_enrichments_unique(conn, now):
+    """PostEnrichments UNIQUE constraint on (model_id, post_id) should be enforced."""
     p1 = PostEnrichments(model_id="m1", post_id="p1", body={"a": True}, created_at=now)
     p2 = PostEnrichments(model_id="m1", post_id="p1", body={"a": False}, created_at=now)
 
@@ -84,4 +89,4 @@ def test_post_enrichments_unique(conn, now):
                 f"INSERT INTO post_enrichments ({', '.join(cols)}) VALUES ({placeholders})",
                 vals2,
             )
-    conn.rollback()
+    result = conn.rollback()

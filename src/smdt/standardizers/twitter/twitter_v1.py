@@ -229,7 +229,8 @@ class TwitterV1Standardizer(Standardizer):
                     )
                 )
 
-        if len(record["text"]) >= 4 and "RT @" in record["text"][:4]:  # if retweet
+        text = record.get("text", "")
+        if len(text) >= 4 and "RT @" in text[:4]:  # if retweet
             created_at = self._parse_dt(record.get("created_at"))
             originator_account_id = record.get("user", {}).get("id_str")
             originator_post_id = record.get("id_str")
@@ -256,7 +257,7 @@ class TwitterV1Standardizer(Standardizer):
                     )
                 )
 
-        if record["in_reply_to_status_id_str"]:
+        if record.get("in_reply_to_status_id_str"):
             created_at = self._parse_dt(record.get("created_at"))
             originator_account_id = record.get("user", {}).get("id_str")
             originator_post_id = record.get("id_str")

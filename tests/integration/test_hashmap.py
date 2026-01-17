@@ -1,4 +1,7 @@
-import pytest, psycopg
+"""Integration tests for HashMap model with database."""
+
+import pytest
+import psycopg
 
 MODELS = True
 try:
@@ -9,6 +12,7 @@ except Exception:
 
 @pytest.mark.skipif(not MODELS, reason="HashMap model not importable")
 def test_hash_map_unique(conn, now):
+    """HashMap UNIQUE constraint on hash_key should be enforced."""
     h1 = HashMap(hash_key="K1", hash_value="V1", created_at=now)
     h2 = HashMap(hash_key="K1", hash_value="V2", created_at=now)
     cols = h1.insert_columns()
@@ -24,4 +28,4 @@ def test_hash_map_unique(conn, now):
                 f"INSERT INTO hash_map ({', '.join(cols)}) VALUES ({', '.join(['%s']*len(cols))})",
                 h2.insert_values(),
             )
-    conn.rollback()
+    result = conn.rollback()

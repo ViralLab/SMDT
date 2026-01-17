@@ -73,7 +73,6 @@ DEFAULT_READER_KW: Dict[str, Dict[str, Any]] = {
 
 
 @dataclass
-@dataclass
 class PipelineConfig:
     """Configuration toggles for the pipeline.
 

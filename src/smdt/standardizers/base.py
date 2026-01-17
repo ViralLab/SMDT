@@ -8,6 +8,7 @@ class DBModelLike(Protocol):
 
     Models must provide methods to get column names and values for insertion.
     """
+
     def insert_columns(self, include_id: bool = False): ...
     def insert_values(self, include_id: bool = False): ...
 
@@ -21,6 +22,7 @@ class SourceInfo:
         member: Optional archive member name.
         hints: Optional metadata hints.
     """
+
     path: str
     member: Optional[str] = None
     hints: Optional[Dict[str, Any]] = None

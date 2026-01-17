@@ -12,7 +12,6 @@ STANDARD_SCHEMA_SQL_PATH = os.path.join(
 
 
 @dataclass
-@dataclass
 class DBConfig:
     """Database configuration parameters.
 
@@ -33,13 +32,21 @@ class DBConfig:
     password: str = os.getenv("DB_PASSWORD", "")
     owner: str = os.getenv("DB_OWNER", "")
     host: str = os.getenv("DB_HOST", "localhost")
-    port: int = int(os.getenv("DB_PORT", "5432"))
+    # parse integers from env with safe fallback to defaults
+    try:
+        _port_val = os.getenv("DB_PORT", "5432")
+        port: int = int(_port_val)
+    except Exception:
+        port: int = 5432
     application_name: str = os.getenv("APP_NAME", "standarddb")
-    connect_timeout: int = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
+    try:
+        _ct = os.getenv("DB_CONNECT_TIMEOUT", "10")
+        connect_timeout: int = int(_ct)
+    except Exception:
+        connect_timeout: int = 10
     standard_schema_path: str = STANDARD_SCHEMA_SQL_PATH
 
 
-@dataclass
 @dataclass
 class AnonymizationVariables:
     """Configuration for anonymization secrets."""
