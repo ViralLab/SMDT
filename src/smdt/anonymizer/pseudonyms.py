@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover
 
 class Algorithm(str, Enum):
     """Supported hashing algorithms."""
+
     SHA256 = "sha256"
     SHA512 = "sha512"
     WHIRLPOOL = "whirlpool"

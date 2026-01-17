@@ -11,6 +11,7 @@ from .registry import read_from_filelike
 
 class ZipReader(Reader):
     """Reader for zip archives."""
+
     name = "zip"
 
     def __init__(

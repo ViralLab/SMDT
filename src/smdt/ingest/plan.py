@@ -8,8 +8,6 @@ from datetime import datetime
 
 from smdt.io.readers import get_reader
 
-# we don't import specific readers here on purpose; registry decides
-
 
 @dataclass
 class MemberPlan:
@@ -20,6 +18,7 @@ class MemberPlan:
         reader_name: Name of the reader that will handle this member.
         included: Whether this member is included after filtering.
     """
+
     name: str  # path inside archive
     reader_name: Optional[str]  # which reader will handle this member
     included: bool  # after include/exclude filters
@@ -37,6 +36,7 @@ class FilePlan:
         is_archive: Whether the file is an archive.
         members: List of member plans if the file is an archive.
     """
+
     path: str
     size: int
     mtime: float
@@ -57,6 +57,7 @@ class Plan:
     Attributes:
         files: List of file plans.
     """
+
     files: List[FilePlan]
 
     def summary(self) -> Dict[str, int]:
@@ -199,7 +200,6 @@ def plan_directories(
                     (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
                 )
                 reader = get_reader(full_str)
-
                 fp = FilePlan(
                     path=full_str,
                     size=st.st_size,

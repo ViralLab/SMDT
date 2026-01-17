@@ -34,7 +34,6 @@ class DetoxifyConfig:
     device: Optional[str] = None  # "cuda" | "cpu" | None(auto)
 
     # Runner/selector knobs
-    db_batch_size: int = 1000  # DB page size
     only_missing: bool = True  # process only posts missing our model_id
 
     # Persistence
@@ -51,8 +50,6 @@ class DetoxifyConfig:
     def __post_init__(self) -> None:
         if self.model_batch_size <= 0:
             raise ValueError("model_batch_size must be > 0")
-        if self.db_batch_size <= 0:
-            raise ValueError("db_batch_size must be > 0")
         if not self.do_save_to_db:
             if not self.output_dir:
                 raise ValueError("output_dir is required when do_save_to_db=False")

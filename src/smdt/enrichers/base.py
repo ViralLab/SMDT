@@ -211,7 +211,7 @@ class BaseEnricher(ABC):
         try:
             self.setup()
             self.load_model()
-            total = self.total_count()
+            total: int | None = self.total_count()
             if total is None:
                 # unknown total; just pull until empty
                 offset = 0

@@ -5,11 +5,13 @@ from typing import Iterable, Mapping, Any, Optional, BinaryIO
 
 class ReaderError(Exception):
     """Base class for reader errors."""
+
     ...
 
 
 class MissingOptionalDependency(ReaderError):
     """Raised when an optional dependency is missing."""
+
     ...
 
 

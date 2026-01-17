@@ -39,6 +39,7 @@ class AnonymizeConfig:
         owner_schema: Optional owner schema for the destination database.
         ask_reinit: Whether to ask for confirmation before reinitializing the destination schema.
     """
+
     src_db_name: str
     dst_db_name: str
     pepper: bytes

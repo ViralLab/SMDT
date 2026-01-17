@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 import re
 import math
+from tqdm.auto import trange
 
 from smdt.enrichers import BaseEnricher, register
 from smdt.store.models import PostEnrichments
@@ -29,7 +30,6 @@ class BERTSentenceClfConfig:
     device: Optional[str] = None
 
     # Runner/selector knobs
-    db_batch_size: int = 1000
     only_missing: bool = True
 
     # Persistence
@@ -48,8 +48,6 @@ class BERTSentenceClfConfig:
     def __post_init__(self) -> None:
         if self.model_batch_size <= 0:
             raise ValueError("model_batch_size must be > 0")
-        if self.db_batch_size <= 0:
-            raise ValueError("db_batch_size must be > 0")
         if not self.do_save_to_db:
             if not self.output_dir:
                 raise ValueError("output_dir is required when do_save_to_db=False")
@@ -75,7 +73,6 @@ class BERTSentenceClfEnricher(BaseEnricher):
             self.cfg = config
         else:
             self.cfg = BERTSentenceClfConfig(**(config or {}))
-
         self.device = (
             self.cfg.device
             if self.cfg.device is not None
@@ -264,7 +261,7 @@ class BERTSentenceClfEnricher(BaseEnricher):
         out: List[PostEnrichments] = []
         mb = self.cfg.model_batch_size
 
-        for i in range(0, len(texts), mb):
+        for i in trange(0, len(texts), mb):
             chunk_ids = post_ids[i : i + mb]
             chunk_txt = texts[i : i + mb]
             chunk_created_ats = post_created_ats[i : i + mb]
