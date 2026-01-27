@@ -424,7 +424,7 @@ def user_interaction_over_time(
     step: timedelta,
     weighting: str = "count",
     min_weight: int = 1,
-) -> List[Dict[str, Any]]:
+) -> Iterator[Dict[str, Any]]:
     """
     Build a sequence of user–user interaction networks over fixed time windows.
 
@@ -445,14 +445,12 @@ def user_interaction_over_time(
 
     Returns
     -------
-    List[dict]
+    Iterator[dict]
         Each element has keys:
           - "window_start": datetime
           - "window_end": datetime
           - "network": NetworkResult
     """
-    results: List[Dict[str, Any]] = []
-
     for ws, we in _iter_time_windows(start_time, end_time, step):
         net = user_interaction(
             db,
@@ -462,15 +460,11 @@ def user_interaction_over_time(
             weighting=weighting,
             min_weight=min_weight,
         )
-        results.append(
-            {
-                "window_start": ws,
-                "window_end": we,
-                "network": net,
-            }
-        )
-
-    return results
+        yield {
+            "window_start": ws,
+            "window_end": we,
+            "network": net,
+        }
 
 
 def entity_cooccurrence_over_time(
@@ -482,7 +476,7 @@ def entity_cooccurrence_over_time(
     step: timedelta,
     weighting: str = "count",
     min_weight: int = 1,
-) -> List[Dict[str, Any]]:
+) -> Iterator[Dict[str, Any]]:
     """
     Build a sequence of entity–entity co-occurrence networks over fixed time windows.
 
@@ -509,7 +503,6 @@ def entity_cooccurrence_over_time(
           - "window_end": datetime
           - "network": NetworkResult
     """
-    results: List[Dict[str, Any]] = []
 
     for ws, we in _iter_time_windows(start_time, end_time, step):
         net = entity_cooccurrence(
@@ -520,15 +513,11 @@ def entity_cooccurrence_over_time(
             weighting=weighting,
             min_weight=min_weight,
         )
-        results.append(
-            {
-                "window_start": ws,
-                "window_end": we,
-                "network": net,
-            }
-        )
-
-    return results
+        yield {
+            "window_start": ws,
+            "window_end": we,
+            "network": net,
+        }
 
 
 def bipartite_over_time(
@@ -540,7 +529,7 @@ def bipartite_over_time(
     end_time: datetime,
     step: timedelta,
     weighting: str = "count",
-) -> List[Dict[str, Any]]:
+) -> Iterator[Dict[str, Any]]:
     """
     Build a sequence of bipartite networks over fixed time windows.
 
@@ -561,13 +550,12 @@ def bipartite_over_time(
 
     Returns
     -------
-    List[dict]
+    Iterator[dict]
         Each element has keys:
           - "window_start": datetime
           - "window_end": datetime
           - "network": NetworkResult
     """
-    results: List[Dict[str, Any]] = []
 
     for ws, we in _iter_time_windows(start_time, end_time, step):
         net = bipartite(
@@ -578,15 +566,11 @@ def bipartite_over_time(
             end_time=we,
             weighting=weighting,
         )
-        results.append(
-            {
-                "window_start": ws,
-                "window_end": we,
-                "network": net,
-            }
-        )
-
-    return results
+        yield {
+            "window_start": ws,
+            "window_end": we,
+            "network": net,
+        }
 
 
 def coaction_over_time(
@@ -598,7 +582,7 @@ def coaction_over_time(
     step: timedelta,
     weighting: str = "count",
     min_weight: int = 1,
-) -> List[Dict[str, Any]]:
+) -> Iterator[Dict[str, Any]]:
     """
     Build a sequence of user–user co-action networks over fixed time windows.
 
@@ -622,13 +606,12 @@ def coaction_over_time(
 
     Returns
     -------
-    List[dict]
+    Iterator[dict]
         Each element has keys:
           - "window_start": datetime
           - "window_end": datetime
           - "network": NetworkResult
     """
-    results: List[Dict[str, Any]] = []
 
     for ws, we in _iter_time_windows(start_time, end_time, step):
         net = coaction(
@@ -643,12 +626,8 @@ def coaction_over_time(
         if min_weight is not None and not net.edges.empty:
             net.edges = net.edges[net.edges["weight"] >= min_weight]
 
-        results.append(
-            {
-                "window_start": ws,
-                "window_end": we,
-                "network": net,
-            }
-        )
-
-    return results
+        yield {
+            "window_start": ws,
+            "window_end": we,
+            "network": net,
+        }
