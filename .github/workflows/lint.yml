@@ -1,0 +1,53 @@
+name: Lint & Format
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+
+      - name: Run Black (check formatting)
+        run: |
+          uv run black --check src/ tests/
+
+      - name: Run Ruff (linting)
+        run: |
+          uv run ruff check src/ tests/
+
+      - name: Run MyPy (type checking)
+        run: |
+          uv run mypy src/smdt/
+        continue-on-error: true  # Don't fail on type errors initially
+
+      - name: Run Bandit (security scanning)
+        run: |
+          uv run bandit -r src/smdt/ -f json -o bandit-report.json || true
+          uv run bandit -r src/smdt/ -f screen
+
+      - name: Upload Bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
