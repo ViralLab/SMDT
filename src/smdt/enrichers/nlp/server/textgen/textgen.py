@@ -7,16 +7,19 @@ import asyncio
 import json
 import time
 
-from smdt.enrichers import BaseEnricher, register
+from smdt.enrichers.base import BaseEnricher
+from smdt.enrichers.registry import register
+
 from smdt.store.models import PostEnrichments
 from smdt.store.standard_db import StandardDB
-from smdt.enrichers.server.prompt_adapters import (
+
+from smdt.enrichers.nlp.server.prompt_adapters import (
     ChatMessage,
     GenParams,
     ProviderConfig,
     make_adapter,
 )
-from smdt.enrichers.server.prompt_template import PromptTemplate
+from smdt.enrichers.nlp.server.prompt_template import PromptTemplate
 
 
 @dataclass
@@ -49,6 +52,7 @@ class TextGenConfig:
     batch_size: int = 32  # DB fetch page size
     max_input_chars: int = 8_000  # crude guard; avoids huge prompts
     requests_per_minute: int = 120  # client-side throttle (approximate)
+    only_missing: bool = True  # Process only posts that haven't been enriched yet
 
     reset_cache: bool = False
     cache_dir: Optional[str] = None  # optional
@@ -109,14 +113,21 @@ class TextGenEnricher(BaseEnricher):
     TARGET = "posts"
     ENRICHER_ID_BASE = "textgen"
 
-    def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
-        super().__init__(db, config=config)
+    def __init__(
+        self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None, **kwargs: Any
+    ):
+        # If arguments are passed as kwargs (e.g. from run_enricher(**conf)), merge them into config
+        combined_config = config or {}
+        if isinstance(combined_config, dict):
+            combined_config.update(kwargs)
+
+        super().__init__(db, config=combined_config)
 
         # validate/normalize config
-        if isinstance(config, TextGenConfig):
-            self.cfg = config
+        if isinstance(self.config, TextGenConfig):
+            self.cfg = self.config
         else:
-            self.cfg = TextGenConfig(**(config or {}))
+            self.cfg = TextGenConfig(**(self.config or {}))
 
         self._gen_params = GenParams(
             temperature=self.cfg.temperature,
@@ -173,7 +184,7 @@ class TextGenEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.ENRICHER_ID)
 
         # Use the real table for exclusion
         if not self.cfg.reset_cache and self.cached_ids:
@@ -200,7 +211,7 @@ class TextGenEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.ENRICHER_ID)
 
         if not self.cfg.reset_cache and self.cached_ids:
             where_clauses.append(
@@ -281,7 +292,7 @@ class TextGenEnricher(BaseEnricher):
                 continue
             payload = {
                 "text": res["text"],
-                "vendor": "vllm",
+                "vendor": self.cfg.provider_kind,
                 "chat_model_id": self.cfg.chat_model_id,
                 "temperature": self.cfg.temperature,
                 "max_tokens": self.cfg.max_tokens,
