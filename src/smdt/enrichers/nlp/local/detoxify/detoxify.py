@@ -8,9 +8,12 @@ import re
 import math
 
 
-from smdt.enrichers import BaseEnricher, register
+from smdt.enrichers.base import BaseEnricher
+from smdt.enrichers.registry import register
+
 from smdt.store.models import PostEnrichments
 from smdt.store.standard_db import StandardDB
+
 
 try:
     import torch

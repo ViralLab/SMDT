@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict
-from smdt.enrichers.registry import get, available
+from smdt.enrichers.registry import get_enricher, list_enrichers as list_registry_enrichers
 from smdt.store.standard_db import StandardDB
 
 
@@ -12,7 +12,8 @@ def run_enricher(name: str, *, db: StandardDB, **kwargs: Any) -> None:
         db: Database connection or handler.
         **kwargs: Additional arguments passed to the enricher.
     """
-    cls = get(name)
+    meta = get_enricher(name)
+    cls = meta["cls"]
     enricher = cls(db, **kwargs)
     enricher.run()
 
@@ -23,4 +24,4 @@ def list_enrichers() -> Dict[str, str]:
     Returns:
         Dictionary mapping enricher names to their descriptions.
     """
-    return {k: v._enricher_description for k, v in available().items()}
+    return {k: v["description"] for k, v in list_registry_enrichers().items()}

@@ -35,7 +35,7 @@ class BaseEnricher(ABC):
         self.config = config or {}
         self.model = None
 
-        self.cache_dir = self.config.cache_dir or str(
+        self.cache_dir = self.config.get("cache_dir") or str(
             Path.home() / ".smdt_enricher_cache"
         )
         self.cache_prefix = "smdt_session_cache_"
@@ -99,7 +99,7 @@ class BaseEnricher(ABC):
             return
 
         # Create a safe table name (e.g., cache_bert_sentiment)
-        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self.MODEL_ID).lower()
+        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self.ENRICHER_ID).lower()
         self.cache_table_name = f"cache_ids_{safe_name}"
 
         conn = self.db.connect()
