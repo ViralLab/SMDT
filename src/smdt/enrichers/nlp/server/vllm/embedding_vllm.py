@@ -13,7 +13,6 @@ from smdt.store.models import PostEnrichments
 from smdt.store.standard_db import StandardDB
 
 
-
 @dataclass
 class VLLMEmbeddingConfig:
     # required

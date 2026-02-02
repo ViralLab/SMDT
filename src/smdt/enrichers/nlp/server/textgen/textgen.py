@@ -30,7 +30,9 @@ class TextGenConfig:
     base_url: str  # OpenAI-compatible endpoint
 
     # --- Provider/adapters ---
-    provider_kind: str = "openai"  # "openai", "anthropic", "hf-text", "ollama"
+    provider_kind: str = (
+        "openai"  # "openai", "anthropic", "hf-text", "ollama", "gemini"
+    )
     provider_model: Optional[str] = None
     prompt_path: Optional[str] = None  # YAML/JSON file
     prompt_id: Optional[str] = None
@@ -45,7 +47,7 @@ class TextGenConfig:
     system_prompt: str = "You are a helpful assistant."
     user_template: str = "Summarize the following post in one sentence:\n\n{body}"
     temperature: float = 0.2
-    max_tokens: int = 256
+    max_tokens: int | None = None
     top_p: float = 1.0
 
     # --- Runner / batching knobs ---
@@ -80,7 +82,7 @@ class TextGenConfig:
             raise ValueError("chat_model_id is required.")
         if not self.base_url:
             raise ValueError("base_url is required.")
-        if self.max_tokens <= 0:
+        if self.max_tokens and self.max_tokens <= 0:
             raise ValueError("max_tokens must be > 0.")
         if self.batch_size <= 0:
             raise ValueError("batch_size must be > 0.")
@@ -96,10 +98,11 @@ class TextGenConfig:
             "anthropic",
             "hf-text",
             "ollama",
+            "gemini",
         }:
             raise ValueError(
                 f"Unsupported provider_kind '{self.provider_kind}'; "
-                "must be one of 'openai', 'anthropic', 'hf-text', 'ollama'."
+                "must be one of 'openai', 'anthropic', 'hf-text', 'ollama', 'gemini'."
             )
 
 
@@ -259,7 +262,6 @@ class TextGenEnricher(BaseEnricher):
                 ),
             ]
             prompt_meta = {"prompt_source": "inline", "prompt_id": None}
-
         try:
             text = await self._adapter.complete(messages, self._gen_params)
             return {"text": text, "prompt": prompt_meta}

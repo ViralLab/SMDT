@@ -1,6 +1,9 @@
 from __future__ import annotations
 from typing import Any, Dict
-from smdt.enrichers.registry import get_enricher, list_enrichers as list_registry_enrichers
+from smdt.enrichers.registry import (
+    get_enricher,
+    list_enrichers as list_registry_enrichers,
+)
 from smdt.store.standard_db import StandardDB
 
 
