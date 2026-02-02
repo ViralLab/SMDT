@@ -24,7 +24,7 @@ class LLMAdapter(ABC):
     async def complete(self, messages: List[ChatMessage], params: GenParams) -> str: ...
 
 
-ProviderKind = Literal["openai", "anthropic", "hf-text", "ollama"]
+ProviderKind = Literal["openai", "anthropic", "hf-text", "ollama", "gemini"]
 
 
 @dataclass
@@ -57,4 +57,9 @@ def make_adapter(cfg: "ProviderConfig") -> LLMAdapter:
         return OllamaAdapter(
             model=cfg.model, base_url=cfg.base_url or "http://localhost:11434"
         )
+    if cfg.kind == "gemini":
+        from .gemini_adapter import GeminiAdapter
+
+        return GeminiAdapter(api_key=cfg.api_key or "", model=cfg.model)
+
     raise ValueError(f"Unknown provider kind: {cfg.kind}")

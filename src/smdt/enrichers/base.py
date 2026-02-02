@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from pathlib import Path
-import psycopg as pgsql
+import tqdm
 import re
 from uuid import uuid4
 
@@ -214,6 +214,7 @@ class BaseEnricher(ABC):
             total: int | None = self.total_count()
             if total is None:
                 # unknown total; just pull until empty
+                pbar = None
                 offset = 0
                 while True:
                     batch = self.fetch_batch(offset, db_batch_size)
@@ -223,7 +224,11 @@ class BaseEnricher(ABC):
                     if results:
                         self.save_results(results)
                     offset += len(batch)
+                    if pbar is None:
+                        pbar = tqdm.tqdm(desc="Enriching data")
+                    pbar.update(len(batch))
             else:
+                pbar = tqdm.tqdm(total=total, desc="Enriching data")
                 for offset in range(0, total, db_batch_size):
                     batch = self.fetch_batch(offset, db_batch_size)
                     if not batch:
@@ -231,5 +236,7 @@ class BaseEnricher(ABC):
                     results = self.process_batch(batch)
                     if results:
                         self.save_results(results)
+                    pbar.update(len(batch))
+                pbar.close()
         finally:
             self.teardown()
