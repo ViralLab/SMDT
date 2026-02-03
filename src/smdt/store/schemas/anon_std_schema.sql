@@ -36,8 +36,10 @@ CREATE TABLE IF NOT EXISTS posts (
     post_id TEXT NOT NULL,      -- pseudonymized
     account_id TEXT NOT NULL,   -- pseudonymized
     conversation_id TEXT,       -- pseudonymized (or NULL if absent)
+    community_id TEXT,          -- pseudonymized (or NULL if absent)
     body TEXT,         -- redacted text (mentions/URLs/emails removed)
     like_count BIGINT,
+    dislike_count BIGINT,
     view_count BIGINT,
     share_count BIGINT,
     comment_count BIGINT,

@@ -46,9 +46,11 @@ class Posts:
     id: Optional[int] = None
     post_id: Optional[str] = None
     conversation_id: Optional[str] = None
+    community_id: Optional[str] = None
     body: Optional[str] = None
 
     like_count: Optional[int] = None
+    dislike_count: Optional[int] = None
     view_count: Optional[int] = None
     share_count: Optional[int] = None
     comment_count: Optional[int] = None
@@ -89,9 +91,10 @@ class Posts:
             raise ValueError(f"quote_count must be >= 0 (got {self.quote_count})")
         if self.bookmark_count is not None and self.bookmark_count < 0:
             raise ValueError(f"bookmark_count must be >= 0 (got {self.bookmark_count})")
-
+        if self.dislike_count is not None and self.dislike_count < 0:   
+            raise ValueError(f"dislike_count must be >= 0 (got {self.dislike_count})")
         # normalize empty strings to None for nullable text fields
-        for name in ("post_id", "conversation_id", "body"):
+        for name in ("post_id", "conversation_id", "community_id", "body"):
             val = getattr(self, name)
             if isinstance(val, str) and val.strip() == "":
                 object.__setattr__(self, name, None)
@@ -111,8 +114,10 @@ class Posts:
             "post_id",
             "account_id",
             "conversation_id",
+            "community_id",
             "body",
             "like_count",
+            "dislike_count",
             "view_count",
             "share_count",
             "comment_count",
@@ -132,8 +137,10 @@ class Posts:
             self.post_id,
             self.account_id,
             self.conversation_id,
+            self.community_id,
             self.body,
             self.like_count,
+            self.dislike_count,
             self.view_count,
             self.share_count,
             self.comment_count,
@@ -158,8 +165,10 @@ class Posts:
             id=row.get("id"),
             post_id=row.get("post_id"),
             conversation_id=row.get("conversation_id"),
+            community_id=row.get("community_id"),
             body=row.get("body"),
             like_count=row.get("like_count"),
+            dislike_count=row.get("dislike_count"),
             view_count=row.get("view_count"),
             share_count=row.get("share_count"),
             comment_count=row.get("comment_count"),
