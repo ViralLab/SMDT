@@ -64,6 +64,7 @@ class GabStandardizer(Standardizer):
                     else None
                 ),
                 like_count=record.get("like_count"),
+                dislike_count=record.get("dislike_count"),
                 share_count=record.get("repost_count"),
                 comment_count=record.get("reply_count"),
                 created_at=created_at,
