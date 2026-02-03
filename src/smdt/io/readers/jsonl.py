@@ -42,6 +42,7 @@ class JsonlReader(Reader):
                 ".jsonl.zst",
                 ".ndjson.zst",
                 ".jsons.zst",
+                ".xz",
             )
         )
 
