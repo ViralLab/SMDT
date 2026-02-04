@@ -27,6 +27,8 @@ from smdt.ingest.dedup import dedup_best
 from smdt.ingest.plan import Plan
 from smdt.standardizers.base import SourceInfo, Standardizer
 from smdt.store.models import (
+    Communities,
+    CommunityType,
     AccountEnrichments,
     Accounts,
     Actions,
@@ -42,20 +44,17 @@ DBModel = Any
 ProgressCallback = Callable[[str, Mapping[str, Any]], None]
 
 UNIQUE_KEYS: Dict[Type, Tuple[str, ...]] = {
-    # --- THIS LINE IS THE FIX ---
-    # It now matches your database's UNIQUE index: (account_id, created_at)
+    Communities: ("community_id", "id", "created_at", "community_type"),
     Accounts: ("account_id", "created_at"),
-    # --- THESE KEYS ARE CORRECT ---
-    # This is a good logical key for deduplication within a batch.
     Posts: ("post_id", "created_at"),
-    # This is a logical key (not DB-enforced) and is correct for dedup_best.
     Entities: ("post_id", "body", "created_at", "retrieved_at"),
-    # This is a logical key (not DB-enforced) and is correct for dedup_best.
     Actions: (
         "originator_account_id",
         "originator_post_id",
         "target_account_id",
         "target_post_id",
+        "target_community_id",
+        "target_community_id",
         "action_type",
         "created_at",
         "retrieved_at",
