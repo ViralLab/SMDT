@@ -211,91 +211,91 @@ class PushShiftTelegramStandardizer(Standardizer):
                         )
                         outputs.append(action)
 
-            urls = extract_urls(record.get("message", "") or "")
-            for url in urls:
-                entity = Entities(
-                    entity_type=EntityType.LINK,
-                    body=url,
-                    created_at=(
-                        datetime.fromisoformat(record.get("date"))
-                        if record.get("date")
-                        else None
-                    ),
-                    retrieved_at=(
-                        datetime.fromtimestamp(record.get("retrieved_utc"))
-                        if record.get("retrieved_utc")
-                        else None
-                    ),
-                    account_id=account_id,
-                    post_id=(
-                        str(record.get("id")) if record.get("id") is not None else None
-                    ),
-                )
-                outputs.append(entity)
+                urls = extract_urls(record.get("message", "") or "")
+                for url in urls:
+                    entity = Entities(
+                        entity_type=EntityType.LINK,
+                        body=url,
+                        created_at=(
+                            datetime.fromisoformat(record.get("date"))
+                            if record.get("date")
+                            else None
+                        ),
+                        retrieved_at=(
+                            datetime.fromtimestamp(record.get("retrieved_utc"))
+                            if record.get("retrieved_utc")
+                            else None
+                        ),
+                        account_id=account_id,
+                        post_id=(
+                            str(record.get("id")) if record.get("id") is not None else None
+                        ),
+                    )
+                    outputs.append(entity)
 
-            hashtags = extract_hashtags(record.get("message", "") or "")
-            for hashtag in hashtags:
-                entity = Entities(
-                    entity_type=EntityType.HASHTAG,
-                    body=hashtag.lstrip("#"),
-                    created_at=(
-                        datetime.fromisoformat(record.get("date"))
-                        if record.get("date")
-                        else None
-                    ),
-                    retrieved_at=(
-                        datetime.fromtimestamp(record.get("retrieved_utc"))
-                        if record.get("retrieved_utc")
-                        else None
-                    ),
-                    account_id=account_id,
-                    post_id=(
-                        str(record.get("id")) if record.get("id") is not None else None
-                    ),
-                )
-                outputs.append(entity)
+                hashtags = extract_hashtags(record.get("message", "") or "")
+                for hashtag in hashtags:
+                    entity = Entities(
+                        entity_type=EntityType.HASHTAG,
+                        body=hashtag.lstrip("#"),
+                        created_at=(
+                            datetime.fromisoformat(record.get("date"))
+                            if record.get("date")
+                            else None
+                        ),
+                        retrieved_at=(
+                            datetime.fromtimestamp(record.get("retrieved_utc"))
+                            if record.get("retrieved_utc")
+                            else None
+                        ),
+                        account_id=account_id,
+                        post_id=(
+                            str(record.get("id")) if record.get("id") is not None else None
+                        ),
+                    )
+                    outputs.append(entity)
 
-            mentions = extract_mentions(record.get("message", "") or "")
-            for mention in mentions:
-                entity = Entities(
-                    entity_type=EntityType.USER_TAG,
-                    body=mention.lstrip("@"),
-                    created_at=(
-                        datetime.fromisoformat(record.get("date"))
-                        if record.get("date")
-                        else None
-                    ),
-                    retrieved_at=(
-                        datetime.fromtimestamp(record.get("retrieved_utc"))
-                        if record.get("retrieved_utc")
-                        else None
-                    ),
-                    account_id=account_id,
-                    post_id=(
-                        str(record.get("id")) if record.get("id") is not None else None
-                    ),
-                )
-                outputs.append(entity)
+                mentions = extract_mentions(record.get("message", "") or "")
+                for mention in mentions:
+                    entity = Entities(
+                        entity_type=EntityType.USER_TAG,
+                        body=mention.lstrip("@"),
+                        created_at=(
+                            datetime.fromisoformat(record.get("date"))
+                            if record.get("date")
+                            else None
+                        ),
+                        retrieved_at=(
+                            datetime.fromtimestamp(record.get("retrieved_utc"))
+                            if record.get("retrieved_utc")
+                            else None
+                        ),
+                        account_id=account_id,
+                        post_id=(
+                            str(record.get("id")) if record.get("id") is not None else None
+                        ),
+                    )
+                    outputs.append(entity)
 
-            emails = extract_emails(record.get("message", "") or "")
-            for email in emails:
-                entity = Entities(
-                    entity_type=EntityType.EMAIL,
-                    body=email,
-                    created_at=(
-                        datetime.fromisoformat(record.get("date"))
-                        if record.get("date")
-                        else None
-                    ),
-                    retrieved_at=(
-                        datetime.fromtimestamp(record.get("retrieved_utc"))
-                        if record.get("retrieved_utc")
-                        else None
-                    ),
-                    account_id=account_id,
-                    post_id=(
-                        str(record.get("id")) if record.get("id") is not None else None
-                    ),
-                )
-                outputs.append(entity)
+                emails = extract_emails(record.get("message", "") or "")
+                for email in emails:
+                    entity = Entities(
+                        entity_type=EntityType.EMAIL,
+                        body=email,
+                        created_at=(
+                            datetime.fromisoformat(record.get("date"))
+                            if record.get("date")
+                            else None
+                        ),
+                        retrieved_at=(
+                            datetime.fromtimestamp(record.get("retrieved_utc"))
+                            if record.get("retrieved_utc")
+                            else None
+                        ),
+                        account_id=account_id,
+                        post_id=(
+                            str(record.get("id")) if record.get("id") is not None else None
+                        ),
+                    )
+                    outputs.append(entity)
         return outputs
