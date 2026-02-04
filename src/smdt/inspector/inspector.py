@@ -287,7 +287,8 @@ class Inspector:
     def _actions_link_stats(self, cur, table: str) -> Dict[str, Any]:
         """
         For the actions table, compute per-action_type completeness of:
-        target_account_id, target_post_id, originator_account_id, originator_post_id.
+        target_account_id, target_post_id, originator_account_id, originator_post_id,
+        originator_community_id, target_community_id.
         """
         cur.execute(
             f"""
@@ -298,6 +299,8 @@ class Inspector:
                 COUNT(target_post_id)         AS nn_target_post_id,
                 COUNT(originator_account_id)  AS nn_originator_account_id,
                 COUNT(originator_post_id)     AS nn_originator_post_id
+                COUNT(originator_community_id) AS nn_originator_community_id,
+                COUNT(target_community_id)    AS nn_target_community_id
             FROM {psql_ident_full(self.schema, table)}
             GROUP BY 1
             ORDER BY 1
@@ -312,6 +315,8 @@ class Inspector:
             nn_tpost,
             nn_oacc,
             nn_opost,
+            nn_ocomm,
+            nn_tcomm,
         ) in rows:
             total = int(total or 0)
 
@@ -332,12 +337,16 @@ class Inspector:
                         "target_post_id": nn_tpost,
                         "originator_account_id": nn_oacc,
                         "originator_post_id": nn_opost,
+                        "originator_community_id": nn_ocomm,
+                        "target_community_id": nn_tcomm,
                     },
                     "pct": {
                         "target_account_id": _pct(nn_tacc),
                         "target_post_id": _pct(nn_tpost),
                         "originator_account_id": _pct(nn_oacc),
                         "originator_post_id": _pct(nn_opost),
+                        "originator_community_id": _pct(nn_ocomm),
+                        "target_community_id": _pct(nn_tcomm),
                     },
                 }
             )
@@ -404,6 +413,8 @@ def report_schemas(
         "originator_post_id",
         "target_account_id",
         "target_post_id",
+        "originator_community_id",
+        "target_community_id",
     ]
 
     # -------- Small helpers (rendering) --------

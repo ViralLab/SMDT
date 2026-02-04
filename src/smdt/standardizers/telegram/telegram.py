@@ -117,8 +117,6 @@ class PushShiftTelegramStandardizer(Standardizer):
                 outputs.append(account)
 
         if "messages" in src.path:
-            # print(record)
-            # input("WAIT")
             community_id = record.get("to_id", {}).get("channel_id")
             account_id = (
                 str(record.get("from_id"))
@@ -149,8 +147,6 @@ class PushShiftTelegramStandardizer(Standardizer):
                 outputs.append(post)
 
                 if record.get("reply_to_msg_id"):
-                    print(record)
-                    input("WAIT")
                     action = Actions(
                         created_at=(
                             datetime.fromisoformat(record.get("date"))
@@ -180,7 +176,7 @@ class PushShiftTelegramStandardizer(Standardizer):
 
                 if record.get("fwd_from"):
                     target_account_id = record.get("fwd_from", {}).get("from_id")
-                    target_community_id = record.get("to_id", {}).get()
+                    target_community_id = record.get("to_id", {}).get("channel_id")
                     if target_account_id:
                         action = Actions(
                             created_at=(
