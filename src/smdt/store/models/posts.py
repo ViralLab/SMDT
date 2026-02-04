@@ -91,7 +91,7 @@ class Posts:
             raise ValueError(f"quote_count must be >= 0 (got {self.quote_count})")
         if self.bookmark_count is not None and self.bookmark_count < 0:
             raise ValueError(f"bookmark_count must be >= 0 (got {self.bookmark_count})")
-        if self.dislike_count is not None and self.dislike_count < 0:   
+        if self.dislike_count is not None and self.dislike_count < 0:
             raise ValueError(f"dislike_count must be >= 0 (got {self.dislike_count})")
         # normalize empty strings to None for nullable text fields
         for name in ("post_id", "conversation_id", "community_id", "body"):

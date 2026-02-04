@@ -7,6 +7,7 @@ except ImportError:
         pass
 
 
+from .communities import Communities, CommunityType
 from .accounts import Accounts
 from .account_enrichments import AccountEnrichments
 from .actions import Actions, ActionType
@@ -17,6 +18,7 @@ from .hashmap import HashMap
 
 
 class ModelNames(StrEnum):
+    Communities = "Communities"
     Accounts = "Accounts"
     Actions = "Actions"
     Posts = "Posts"
@@ -34,6 +36,10 @@ MODEL_REGISTRY = {
     PostEnrichments: {
         "table": "post_enrichments",
         "jsonb_fields": {"body"},
+    },
+    Communities: {
+        "table": "communities",
+        "jsonb_fields": set(),
     },
     Accounts: {
         "table": "accounts",
@@ -59,6 +65,8 @@ MODEL_REGISTRY = {
 
 
 __all__ = [
+    "Communities",
+    "CommunityType",
     "Accounts",
     "Actions",
     "Posts",

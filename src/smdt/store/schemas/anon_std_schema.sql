@@ -7,10 +7,33 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE ACTION_TYPE AS ENUM ('UPVOTE','DOWNVOTE','SHARE','QUOTE','UNFOLLOW','FOLLOW','COMMENT','BLOCK');
+  CREATE TYPE ACTION_TYPE AS ENUM ('UPVOTE','DOWNVOTE','SHARE','QUOTE','UNFOLLOW','FOLLOW','COMMENT','BLOCK', "LINK");
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE COMMUNITY_TYPE AS ENUM ('GROUP','CHANNEL');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ---------- Core tables (ANON) ----------
+CREATE TABLE IF NOT EXISTS communities (
+    id BIGINT GENERATED ALWAYS AS IDENTITY,
+    community_id TEXT,
+    community_type COMMUNITY_TYPE,
+    community_username TEXT,
+    community_name TEXT,
+    bio TEXT,
+    is_public BOOLEAN,
+    member_count BIGINT,
+    post_count BIGINT,
+    profile_image_url TEXT,
+    owner_account_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    retrieved_at TIMESTAMPTZ,
+    CHECK (member_count IS NULL OR member_count >= 0),
+    CHECK (post_count   IS NULL OR post_count   >= 0),
+    PRIMARY KEY (created_at, id)
+);
+ 
 CREATE TABLE IF NOT EXISTS accounts (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     account_id TEXT,            -- pseudonymized
@@ -74,13 +97,29 @@ CREATE TABLE IF NOT EXISTS actions (
     originator_post_id TEXT,    -- pseudonymized
     target_account_id TEXT,     -- pseudonymized
     target_post_id TEXT,        -- pseudonymized
+    originator_community_id TEXT, -- pseudonymized
+    target_community_id TEXT,     -- pseudonymized
     action_type ACTION_TYPE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (
-        (originator_account_id IS NOT NULL OR originator_post_id IS NOT NULL) AND
-        (target_account_id   IS NOT NULL OR target_post_id IS NOT NULL)
-    ),
+            (
+                -- Scenario 1: Action is LINK
+                -- Requires community IDs to be present.
+                -- (implicitly allows other IDs to be null by not checking them here)
+                action_type = 'LINK' 
+                AND originator_community_id IS NOT NULL 
+                AND target_community_id IS NOT NULL
+            )
+            OR
+            (
+                -- Scenario 2: Action is NOT LINK
+                -- Enforces the original check (Account OR Post must exist for both sides)
+                action_type <> 'LINK' 
+                AND (originator_account_id IS NOT NULL OR originator_post_id IS NOT NULL)
+                AND (target_account_id   IS NOT NULL OR target_post_id IS NOT NULL)
+            )
+        ), 
     PRIMARY KEY (created_at, action_type, id)
 );
 
@@ -106,6 +145,7 @@ CREATE TABLE IF NOT EXISTS post_enrichments (
 
 
 -- Hypertables
+SELECT create_hypertable('communities','created_at', chunk_time_interval => INTERVAL '30 days', if_not_exists => TRUE);
 SELECT create_hypertable('accounts','created_at', chunk_time_interval => INTERVAL '30 days', if_not_exists => TRUE);
 SELECT create_hypertable('posts',   'created_at', chunk_time_interval => INTERVAL '7 days',  if_not_exists => TRUE);
 SELECT create_hypertable('entities','created_at', chunk_time_interval => INTERVAL '7 days',  if_not_exists => TRUE);
@@ -116,6 +156,9 @@ SELECT add_dimension('entities', 'entity_type', number_partitions => 6);
 SELECT add_dimension('actions',  'action_type', number_partitions => 8);
 
 -- Indexes
+-- communities
+CREATE UNIQUE INDEX IF NOT EXISTS communities_comm_created_uk ON communities (community_id, created_at);
+
 -- accounts
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_acct_created_uk ON accounts (account_id, created_at);
 
@@ -140,6 +183,7 @@ CREATE INDEX IF NOT EXISTS acct_enrich_body_gin ON account_enrichments USING GIN
 CREATE INDEX IF NOT EXISTS post_enrich_body_gin ON post_enrichments   USING GIN (body);
 
 -- BRIN indexes (for large tables)
+CREATE INDEX IF NOT EXISTS communities_created_at_brin ON communities USING BRIN (created_at);
 CREATE INDEX IF NOT EXISTS accounts_created_at_brin ON accounts USING BRIN (created_at);
 CREATE INDEX IF NOT EXISTS posts_created_at_brin   ON posts    USING BRIN (created_at);
 CREATE INDEX IF NOT EXISTS actions_created_at_brin ON actions  USING BRIN (created_at);
@@ -147,6 +191,7 @@ CREATE INDEX IF NOT EXISTS entities_created_at_brin ON entities USING BRIN (crea
 
 -- Compression (set & policy)
 -- This just *enables* compression on the tables, it does not *schedule* it.
+ALTER TABLE communities SET (timescaledb.compress, timescaledb.compress_segmentby = 'community_id');
 ALTER TABLE accounts SET (timescaledb.compress, timescaledb.compress_segmentby = 'account_id');
 ALTER TABLE posts    SET (timescaledb.compress, timescaledb.compress_segmentby = 'account_id');
 ALTER TABLE entities SET (timescaledb.compress, timescaledb.compress_segmentby = 'entity_type, account_id');
@@ -163,6 +208,7 @@ ALTER TABLE actions  SET (timescaledb.compress, timescaledb.compress_segmentby =
 
 
 -- Reorder (scan locality)
+SELECT add_reorder_policy('communities','communities_comm_created_uk');
 SELECT add_reorder_policy('accounts','accounts_acct_created_uk');
 SELECT add_reorder_policy('posts',   'posts_acct_time_idx');
 SELECT add_reorder_policy('actions', 'actions_type_time_idx');

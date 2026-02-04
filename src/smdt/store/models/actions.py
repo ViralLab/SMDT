@@ -20,6 +20,7 @@ class ActionType(StrEnum):
     FOLLOW = "FOLLOW"
     COMMENT = "COMMENT"
     BLOCK = "BLOCK"
+    LINK = "LINK"
 
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
@@ -32,6 +33,8 @@ class Actions:
     originator_post_id: Optional[str] = None
     target_account_id: Optional[str] = None
     target_post_id: Optional[str] = None
+    originator_community_id: Optional[str] = None
+    target_community_id: Optional[str] = None
     retrieved_at: Optional[datetime] = None
 
     # Metadata for StandardDB fallback
@@ -55,14 +58,21 @@ class Actions:
             object.__setattr__(self, "created_at", ca.replace(tzinfo=timezone.utc))
 
         # CHECK constraint: one originator, one target and check they are not nan
-        if not (self.originator_account_id or self.originator_post_id):
-            raise ValueError(
-                "Either originator_account_id or originator_post_id must be provided"
-            )
-        if not (self.target_account_id or self.target_post_id):
-            raise ValueError(
-                "Either target_account_id or target_post_id must be provided"
-            )
+        if self.action_type == ActionType.LINK:
+            # For LINK actions, both originator and target communities must be provided
+            if not (self.originator_community_id and self.target_community_id):
+                raise ValueError(
+                    "Both originator_community_id and target_community_id must be provided for LINK actions"
+                )
+        else:
+            if not (self.originator_account_id or self.originator_post_id):
+                raise ValueError(
+                    "Either originator_account_id or originator_post_id must be provided"
+                )
+            if not (self.target_account_id or self.target_post_id):
+                raise ValueError(
+                    "Either target_account_id or target_post_id must be provided"
+                )
 
         # Normalize empty strings to None
         for name in (
@@ -70,6 +80,8 @@ class Actions:
             "originator_post_id",
             "target_account_id",
             "target_post_id",
+            "originator_community_id",
+            "target_community_id",
         ):
             val = getattr(self, name)
             if isinstance(val, str) and val.strip() == "":
@@ -83,6 +95,8 @@ class Actions:
             "originator_post_id",
             "target_account_id",
             "target_post_id",
+            "originator_community_id",
+            "target_community_id",
             "action_type",
             "created_at",
             "retrieved_at",
@@ -100,6 +114,8 @@ class Actions:
             self.originator_post_id,
             self.target_account_id,
             self.target_post_id,
+            self.originator_community_id,
+            self.target_community_id,
             at_str,
             self.created_at,
             self.retrieved_at,
@@ -116,6 +132,8 @@ class Actions:
             originator_post_id=row.get("originator_post_id"),
             target_account_id=row.get("target_account_id"),
             target_post_id=row.get("target_post_id"),
+            originator_community_id=row.get("originator_community_id"),
+            target_community_id=row.get("target_community_id"),
             retrieved_at=row.get("retrieved_at"),
         )
 
