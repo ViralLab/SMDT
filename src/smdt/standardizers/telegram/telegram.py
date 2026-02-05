@@ -228,7 +228,9 @@ class PushShiftTelegramStandardizer(Standardizer):
                         ),
                         account_id=account_id,
                         post_id=(
-                            str(record.get("id")) if record.get("id") is not None else None
+                            str(record.get("id"))
+                            if record.get("id") is not None
+                            else None
                         ),
                     )
                     outputs.append(entity)
@@ -250,7 +252,9 @@ class PushShiftTelegramStandardizer(Standardizer):
                         ),
                         account_id=account_id,
                         post_id=(
-                            str(record.get("id")) if record.get("id") is not None else None
+                            str(record.get("id"))
+                            if record.get("id") is not None
+                            else None
                         ),
                     )
                     outputs.append(entity)
@@ -272,7 +276,9 @@ class PushShiftTelegramStandardizer(Standardizer):
                         ),
                         account_id=account_id,
                         post_id=(
-                            str(record.get("id")) if record.get("id") is not None else None
+                            str(record.get("id"))
+                            if record.get("id") is not None
+                            else None
                         ),
                     )
                     outputs.append(entity)
@@ -294,7 +300,9 @@ class PushShiftTelegramStandardizer(Standardizer):
                         ),
                         account_id=account_id,
                         post_id=(
-                            str(record.get("id")) if record.get("id") is not None else None
+                            str(record.get("id"))
+                            if record.get("id") is not None
+                            else None
                         ),
                     )
                     outputs.append(entity)

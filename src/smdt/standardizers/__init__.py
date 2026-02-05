@@ -8,6 +8,10 @@ from .twitter.twitter_USC import TwitterUSCStandardizer
 from .bluesky.bluesky_dataset import BlueSkyDatasetStandardizer
 from .bluesky.bluesky_api import BlueSkyAPIStandardizer
 from .bluesky.bluesky_api_with_car import BlueSkyAPICARStandardizer
+from .reddit.reddit import PushShiftRedditStandardizer
+from .telegram.telegram import PushShiftTelegramStandardizer
+from .scored.scored import ScoredStandardizer
+from .gab.gab import GabStandardizer
 
 from .utils import (
     extract_emails,
@@ -27,6 +31,10 @@ __all__ = [
     "BlueSkyDatasetStandardizer",
     "BlueSkyAPIStandardizer",
     "BlueSkyAPICARStandardizer",
+    "GabStandardizer",
+    "PushShiftRedditStandardizer",
+    "PushShiftTelegramStandardizer",
+    "ScoredStandardizer",
     # Utility functions
     "extract_emails",
     "extract_hashtags",

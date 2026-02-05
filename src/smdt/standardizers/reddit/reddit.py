@@ -12,7 +12,6 @@ from smdt.store.models.actions import Actions, ActionType
 
 from smdt.standardizers.utils import (
     extract_emails,
-    extract_mentions,
     extract_urls,
     extract_hashtags,
 )
@@ -125,6 +124,29 @@ class PushShiftRedditStandardizer(Standardizer):
                     )
                     outputs.append(action)
 
+                urls = extract_urls(full_text)
+                for url in urls:
+                    entity = Entities(
+                        entity_type=EntityType.LINK,
+                        body=url,
+                        post_id="t3_" + str(record.get("id")),
+                        account_id=record.get("author"),
+                        created_at=created_at,
+                        retrieved_at=retrieved_at,
+                    )
+                    outputs.append(entity)
+
+                for hashtag in extract_hashtags(full_text):
+                    entity = Entities(
+                        entity_type=EntityType.HASHTAG,
+                        body=hashtag.lstrip("#"),
+                        post_id="t3_" + str(record.get("id")),
+                        account_id=record.get("author"),
+                        created_at=created_at,
+                        retrieved_at=retrieved_at,
+                    )
+                    outputs.append(entity)
+
         if "comments" in src.path:
             if created_utc is not None:
                 created_at = datetime.fromtimestamp(created_utc)
@@ -164,10 +186,11 @@ class PushShiftRedditStandardizer(Standardizer):
                 for email in emails:
                     entity = Entities(
                         entity_type=EntityType.EMAIL,
-                        entity_value=email,
+                        body=email,
                         post_id=post.post_id,
                         created_at=created_at,
                         retrieved_at=retrieved_at,
+                        account_id=post.account_id,
                     )
                     outputs.append(entity)
 
@@ -175,8 +198,9 @@ class PushShiftRedditStandardizer(Standardizer):
                 for mention in mentions:
                     entity = Entities(
                         entity_type=EntityType.USER_TAG,
-                        entity_value=mention,
+                        body=mention,
                         post_id=post.post_id,
+                        account_id=post.account_id,
                         created_at=created_at,
                         retrieved_at=retrieved_at,
                     )
@@ -186,8 +210,9 @@ class PushShiftRedditStandardizer(Standardizer):
                 for url in urls:
                     entity = Entities(
                         entity_type=EntityType.LINK,
-                        entity_value=url,
+                        body=url,
                         post_id=post.post_id,
+                        account_id=post.account_id,
                         created_at=created_at,
                         retrieved_at=retrieved_at,
                     )
@@ -196,8 +221,9 @@ class PushShiftRedditStandardizer(Standardizer):
                 for hashtag in extract_hashtags(record.get("body", "")):
                     entity = Entities(
                         entity_type=EntityType.HASHTAG,
-                        entity_value=hashtag,
+                        body=hashtag.lstrip("#"),
                         post_id=post.post_id,
+                        account_id=post.account_id,
                         created_at=created_at,
                         retrieved_at=retrieved_at,
                     )
