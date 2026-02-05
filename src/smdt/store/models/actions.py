@@ -57,23 +57,6 @@ class Actions:
         if ca.tzinfo is None or ca.tzinfo.utcoffset(ca) is None:
             object.__setattr__(self, "created_at", ca.replace(tzinfo=timezone.utc))
 
-        # CHECK constraint: one originator, one target and check they are not nan
-        if self.action_type == ActionType.LINK:
-            # For LINK actions, both originator and target communities must be provided
-            if not (self.originator_community_id and self.target_community_id):
-                raise ValueError(
-                    "Both originator_community_id and target_community_id must be provided for LINK actions"
-                )
-        else:
-            if not (self.originator_account_id or self.originator_post_id):
-                raise ValueError(
-                    "Either originator_account_id or originator_post_id must be provided"
-                )
-            if not (self.target_account_id or self.target_post_id):
-                raise ValueError(
-                    "Either target_account_id or target_post_id must be provided"
-                )
-
         # Normalize empty strings to None
         for name in (
             "originator_account_id",

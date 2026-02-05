@@ -102,24 +102,6 @@ CREATE TABLE IF NOT EXISTS actions (
     action_type ACTION_TYPE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
-    CHECK (
-            (
-                -- Scenario 1: Action is LINK
-                -- Requires community IDs to be present.
-                -- (implicitly allows other IDs to be null by not checking them here)
-                action_type = 'LINK' 
-                AND originator_community_id IS NOT NULL 
-                AND target_community_id IS NOT NULL
-            )
-            OR
-            (
-                -- Scenario 2: Action is NOT LINK
-                -- Enforces the original check (Account OR Post must exist for both sides)
-                action_type <> 'LINK' 
-                AND (originator_account_id IS NOT NULL OR originator_post_id IS NOT NULL)
-                AND (target_account_id   IS NOT NULL OR target_post_id IS NOT NULL)
-            )
-        ), 
     PRIMARY KEY (created_at, action_type, id)
 );
 
