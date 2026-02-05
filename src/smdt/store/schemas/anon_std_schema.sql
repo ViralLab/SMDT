@@ -83,11 +83,17 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE TABLE IF NOT EXISTS entities (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     account_id TEXT,            -- pseudonymized
-    post_id TEXT NOT NULL,      -- pseudonymized
+    community_id TEXT,         -- pseudonymized
+    post_id TEXT,      -- pseudonymized
     body TEXT NOT NULL, -- sanitized per type (see above)
     entity_type ENTITY_TYPE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
+        -- one needs to be present between post_id and community_id
+    CHECK (
+        (post_id IS NOT NULL) OR 
+        (community_id IS NOT NULL)
+    ),
     PRIMARY KEY (created_at, entity_type, id)
 );
 

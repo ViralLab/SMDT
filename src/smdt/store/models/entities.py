@@ -27,6 +27,7 @@ class Entities:
 
     id: Optional[int] = None
     account_id: Optional[str] = None
+    community_id: Optional[str] = None
     post_id: Optional[str] = None
     body: Optional[str] = None
     retrieved_at: Optional[datetime] = None
@@ -53,10 +54,13 @@ class Entities:
             object.__setattr__(self, "created_at", ca.replace(tzinfo=timezone.utc))
 
         # normalize empty strings to None
-        for name in ("account_id", "post_id"):
+        for name in ("account_id", "community_id", "post_id"):
             val = getattr(self, name)
             if isinstance(val, str) and val.strip() == "":
                 object.__setattr__(self, name, None)
+
+        if not (self.post_id or self.community_id):
+            raise ValueError("Either post_id or community_id must be provided")
 
         # body must be a dict if provided (JSONB)
         if self.body is not None and not isinstance(self.body, str):
@@ -66,6 +70,7 @@ class Entities:
     def insert_columns(include_id: bool = False) -> Tuple[str, ...]:
         cols = (
             "account_id",
+            "community_id",
             "post_id",
             "body",
             "entity_type",
@@ -83,6 +88,7 @@ class Entities:
         )
         vals = (
             self.account_id,
+            self.community_id,
             self.post_id,
             self.body,
             et_str,
@@ -96,6 +102,7 @@ class Entities:
         return cls(
             id=row.get("id"),
             account_id=row.get("account_id"),
+            community_id=row.get("community_id"),
             post_id=row.get("post_id"),
             body=row.get("body"),
             entity_type=row["entity_type"],  # NOT NULL (enum text)
