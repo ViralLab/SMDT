@@ -44,6 +44,11 @@ class GabStandardizer(Standardizer):
 
             return account
 
+    def _get_z_count(self, value):
+        if value and value >= 0:
+            return value
+        return None
+
     def _get_post_info(self, record: dict) -> Posts:
         if record.get("created_utc"):
             timestamp = int(record["created_utc"])
@@ -63,10 +68,10 @@ class GabStandardizer(Standardizer):
                     if record.get("conversation_parent_id")
                     else None
                 ),
-                like_count=record.get("like_count"),
-                dislike_count=record.get("dislike_count"),
-                share_count=record.get("repost_count"),
-                comment_count=record.get("reply_count"),
+                like_count=self._get_z_count(record.get("like_count")),
+                dislike_count=self._get_z_count(record.get("dislike_count")),
+                share_count=self._get_z_count(record.get("repost_count")),
+                comment_count=self._get_z_count(record.get("reply_count")),
                 created_at=created_at,
                 retrieved_at=retrieved_at,
             )
