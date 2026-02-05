@@ -129,7 +129,7 @@ class PushShiftRedditStandardizer(Standardizer):
                     entity = Entities(
                         entity_type=EntityType.LINK,
                         body=url,
-                        post_id="t3_" + str(record.get("id")),
+                        community_id="t3_" + str(record.get("id")),
                         account_id=record.get("author"),
                         created_at=created_at,
                         retrieved_at=retrieved_at,
