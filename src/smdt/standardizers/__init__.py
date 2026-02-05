@@ -13,6 +13,7 @@ from .voatco.voatco import VoatCoStandardizer
 from .telegram.telegram import PushShiftTelegramStandardizer
 from .scored.scored import ScoredStandardizer
 from .gab.gab import GabStandardizer
+from .koo.koo import KooStandardizer
 
 from .utils import (
     extract_emails,
@@ -37,6 +38,7 @@ __all__ = [
     "VoatCoStandardizer",
     "PushShiftTelegramStandardizer",
     "ScoredStandardizer",
+    "KooStandardizer",
     # Utility functions
     "extract_emails",
     "extract_hashtags",

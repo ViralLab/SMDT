@@ -172,7 +172,6 @@ class PushShiftRedditStandardizer(Standardizer):
                 submission_id = record.get("link_id")  # e.g., t3_abcdef
                 parent_id = record.get("parent_id")  # e.g., t1_ghijkl
 
-
                 # target community is the submission
                 action = Actions(
                     action_type=ActionType.COMMENT,

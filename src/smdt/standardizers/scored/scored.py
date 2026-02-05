@@ -29,7 +29,11 @@ class ScoredStandardizer(Standardizer):
 
         if "submissions" in src.path:
 
-            if record.get("created") is not None and record.get("author") is not None and record.get("author", "").strip() != '':
+            if (
+                record.get("created") is not None
+                and record.get("author") is not None
+                and record.get("author", "").strip() != ""
+            ):
                 created_at = datetime.fromtimestamp(record.get("created") / 1000.0)
                 score_up = record.get("score_up", 0)
                 score_down = record.get("score_down", 0)
@@ -46,7 +50,7 @@ class ScoredStandardizer(Standardizer):
                     owner_account_id=str(record.get("author")),
                     bio=full_text,
                     created_at=created_at,
-                )       
+                )
                 outputs.append(community)
 
                 for email in extract_emails(full_text):
@@ -68,7 +72,7 @@ class ScoredStandardizer(Standardizer):
                         created_at=created_at,
                     )
                     outputs.append(entity)
-                
+
                 for url in extract_urls(full_text):
                     entity = Entities(
                         entity_type=EntityType.LINK,
@@ -78,7 +82,7 @@ class ScoredStandardizer(Standardizer):
                         created_at=created_at,
                     )
                     outputs.append(entity)
-                
+
                 for hashtag in extract_hashtags(full_text):
                     entity = Entities(
                         entity_type=EntityType.HASHTAG,
@@ -88,13 +92,17 @@ class ScoredStandardizer(Standardizer):
                         created_at=created_at,
                     )
                     outputs.append(entity)
-        
+
         if "comments" in src.path:
-            if record.get("created") is not None and record.get("author") is not None and record.get("author", "").strip() != '':
+            if (
+                record.get("created") is not None
+                and record.get("author") is not None
+                and record.get("author", "").strip() != ""
+            ):
                 created_at = datetime.fromtimestamp(record.get("created") / 1000.0)
                 score_up = record.get("score_up", 0)
                 score_down = record.get("score_down", 0)
-  
+
                 body = record.get("raw_content", "")
                 account_id = str(record.get("author"))
                 post_id = str(record.get("uuid"))
@@ -107,7 +115,7 @@ class ScoredStandardizer(Standardizer):
                     created_at=created_at,
                     like_count=score_up,
                     dislike_count=score_down,
-                    community_id=community, 
+                    community_id=community,
                 )
                 outputs.append(post)
 
@@ -120,7 +128,7 @@ class ScoredStandardizer(Standardizer):
                         created_at=created_at,
                     )
                     outputs.append(entity)
-                
+
                 for url in extract_urls(body):
                     entity = Entities(
                         entity_type=EntityType.LINK,
@@ -130,7 +138,7 @@ class ScoredStandardizer(Standardizer):
                         created_at=created_at,
                     )
                     outputs.append(entity)
-                
+
                 for hashtag in extract_hashtags(body):
                     entity = Entities(
                         entity_type=EntityType.HASHTAG,
@@ -149,6 +157,5 @@ class ScoredStandardizer(Standardizer):
                     created_at=created_at,
                 )
                 outputs.append(action)
- 
 
         return outputs
