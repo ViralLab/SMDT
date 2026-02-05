@@ -139,7 +139,7 @@ class GabStandardizer(Standardizer):
 
         if record.get("retrieved_utc"):
             retrieved_at = datetime.fromtimestamp(int(record["retrieved_utc"]))
-    
+
         entity_set = set()
         post_id = str(record.get("id"))
         account_id = (
