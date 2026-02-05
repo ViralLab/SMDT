@@ -68,7 +68,7 @@ def maybe_decompress(f: IO[bytes], name_or_ext: Optional[str]) -> IO[bytes]:
             raise RuntimeError(
                 "zstandard is required to read .zst; install 'smdt[zstd]'"
             )
-        d = zstd.ZstdDecompressor()
+        d = zstd.ZstdDecompressor(max_window_size=2147483648)
         return d.stream_reader(f)  # returns a file-like object
     return f
 
