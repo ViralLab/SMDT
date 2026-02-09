@@ -298,7 +298,7 @@ class Inspector:
                 COUNT(target_account_id)      AS nn_target_account_id,
                 COUNT(target_post_id)         AS nn_target_post_id,
                 COUNT(originator_account_id)  AS nn_originator_account_id,
-                COUNT(originator_post_id)     AS nn_originator_post_id
+                COUNT(originator_post_id)     AS nn_originator_post_id,
                 COUNT(originator_community_id) AS nn_originator_community_id,
                 COUNT(target_community_id)    AS nn_target_community_id
             FROM {psql_ident_full(self.schema, table)}
@@ -327,6 +327,8 @@ class Inspector:
             nn_tpost = int(nn_tpost or 0)
             nn_oacc = int(nn_oacc or 0)
             nn_opost = int(nn_opost or 0)
+            nn_ocomm = int(nn_ocomm or 0)
+            nn_tcomm = int(nn_tcomm or 0)
 
             per_type.append(
                 {
