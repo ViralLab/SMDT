@@ -14,6 +14,7 @@ from .telegram.telegram import PushShiftTelegramStandardizer
 from .scored.scored import ScoredStandardizer
 from .gab.gab import GabStandardizer
 from .koo.koo import KooStandardizer
+from .parler.parler import ParlerStandardizer
 
 from .utils import (
     extract_emails,
@@ -39,6 +40,7 @@ __all__ = [
     "PushShiftTelegramStandardizer",
     "ScoredStandardizer",
     "KooStandardizer",
+    "ParlerStandardizer",
     # Utility functions
     "extract_emails",
     "extract_hashtags",
