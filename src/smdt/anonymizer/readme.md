@@ -6,12 +6,11 @@ from smdt.config import AnonymizationVariables
 
 anon_vars = AnonymizationVariables()
 cfg = AnonymizeConfig(
-    src_db_name="truth_social",
-    dst_db_name="truth_social_anon",
+    src_db_name="db",
+    dst_db_name="db_anon",
     pepper=anon_vars.pepper,
     algorithm=Algorithm.SHA256,
     output_hex_len=64,
-    replace_numbers=False,
     ask_reinit=True,
     chunk_rows=5_000,
 )
