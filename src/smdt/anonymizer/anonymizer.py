@@ -113,6 +113,7 @@ class Anonymizer:
         self._ensure_prepared()
         log.info("Starting anonymization…")
         for table in [
+            "communities",
             "accounts",
             "posts",
             "entities",
@@ -136,14 +137,14 @@ class Anonymizer:
         import sys
 
         self.dst.init_db()
-        conn = self.dst.connect(self.cfg.dst_db_name)
+        conn = self.dst.connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT table_name FROM information_schema.tables
                     WHERE table_schema = COALESCE(current_schema(), 'public')
-                    AND table_name IN ('accounts', 'posts', 'entities', 'actions', 'post_enrichments', 'account_enrichments')
+                    AND table_name IN ('accounts', 'posts', 'entities', 'actions', 'post_enrichments', 'account_enrichments', 'communities')
                     """
                 )
                 existing = {r[0] for r in cur.fetchall()}
@@ -157,6 +158,7 @@ class Anonymizer:
             "actions",
             "post_enrichments",
             "account_enrichments",
+            "communities",
         }:
             # Destination looks initialized
             if self.cfg.ask_reinit and sys.stdin.isatty():
@@ -202,7 +204,7 @@ class Anonymizer:
         Yields:
             Dictionary representing a row from the table.
         """
-        conn = self.src.connect(self.cfg.src_db_name)
+        conn = self.src.connect()
         try:
             with conn.cursor(row_factory=dict_row) as cur:  # psycopg3 row→dict
                 where = ""
@@ -386,6 +388,8 @@ class Anonymizer:
             on_conflict = "(created_at, id) DO NOTHING"
         elif table == "posts":
             on_conflict = "(created_at, id) DO NOTHING"
+        elif table == "communities":
+            on_conflict = "(created_at, id) DO NOTHING"
         elif table in {"post_enrichments", "account_enrichments"}:
             on_conflict = None
         self.dst.insert_with_fallbacks(items, on_conflict=on_conflict)
@@ -411,8 +415,9 @@ class Anonymizer:
             "entities",
             "posts",
             "accounts",
+            "communities",
         ]
-        conn = self.dst.connect(self.cfg.dst_db_name)
+        conn = self.dst.connect()
         try:
             with conn.cursor() as cur:
                 # Drop TimescaleDB policies if present to avoid dependency errors
@@ -422,6 +427,10 @@ class Anonymizer:
                     pass
                 try:
                     cur.execute("SELECT remove_compression_policy('posts')")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("SELECT remove_compression_policy('communities')")
                 except Exception:
                     pass
                 try:
