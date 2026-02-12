@@ -111,10 +111,14 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 ```
 </details>
  
-## Installation & Quickstart
+## Installation & Quickstart 
 
-This project uses `uv` for dependency management.
+This project uses `uv` for fast Python package management.
 
+For detailed installation instructions, please refer to the official documentation:
+
+* [**uv Installation Guide**](https://docs.astral.sh/uv/getting-started/installation/)
+---
 1.  **Clone the Repository**
     ```bash
     git clone [https://github.com/ViralLab/SMDT](https://github.com/ViralLab/SMDT)
@@ -259,6 +263,12 @@ To add support for a platform like Threads:
 1.  Create a new module in `src/smdt/standardizers/threads/` that maps raw data to the normalized models.
     
 2.  Update `src/smdt/standardizers/__init__.py` to import and expose the new standardizer.
+
+
+
+# <a name="citation"></a> Citation
+```bibtex
+```
 
 ## License
 [License Information Here]
