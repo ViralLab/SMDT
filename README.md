@@ -23,7 +23,7 @@ The goal is to provide a flexible, consistent data model to enable reproducible 
 
 ## Features
 
-* **Ingest & Standardize:** Convert raw platform exports (Twitter/X, Bluesky, TruthSocial) into normalized SQL tables (`posts`, `users`, `entities`, `interactions`).
+* **Ingest & Standardize:** Convert raw platform exports (Twitter/X, Bluesky, TruthSocial) into normalized SQL tables (`Communities`, `Accounts`, `Posts`,  `Actions`, `Entities`).
 * **Anonymize & Redact:** Remove or pseudonymize sensitive fields using policy-driven helpers before sharing datasets.
 * **Enrich & Label:** Apply computed features (language detection, toxicity scores, embeddings) via a local or server-backed enrichment framework.
 * **Build Networks:** Generate edge lists (User–User, Entity–Cooccurrence) and bipartite graphs compatible with NetworkX and Gephi.
