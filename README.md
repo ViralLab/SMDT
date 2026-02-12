@@ -1,156 +1,207 @@
 # SMDT — Social Media Data Toolkit
 
-## Overview
+![diagram](assets/toolkit_diagram.png?raw=true)
 
-SMDT is a lightweight toolkit for ingesting, normalizing, enriching, and analyzing social-media data. It focuses on streaming-friendly processing for large datasets and provides builders, utilities, and simple NLP/enrichment hooks so you can move from raw exports (JSONL/CSV) to edge lists and NetworkX graphs for analysis. The goal is to provide a flexible, consistent data model for social-media data to enable reproducible data analysis across and between platforms.
+**SMDT** is a lightweight toolkit designed for ingesting, normalizing, enriching, and analyzing social-media data. It prioritizes streaming-friendly processing for large datasets, providing builders, utilities, and NLP hooks to transform raw exports (JSONL/CSV) into edge lists and NetworkX graphs.
 
-## Project layout
+The goal is to provide a flexible, consistent data model to enable reproducible data analysis across different social platforms.
 
-```
-SMDT/
-├── src/smdt/              # Main package
-│   ├── anonymizer/        # Redaction and pseudonymization utilities
-│   ├── config.py          # Configuration (DB, anonymization)
-│   ├── enrichers/         # Text enrichment framework (local + server)
-│   ├── ingest/            # Ingestion pipelines and deduplication
-│   ├── inspector/         # Data quality inspection utilities
-│   ├── io/                # Streaming readers and archive helpers
-│   ├── networks/          # Network builders and streaming helpers
-│   ├── standardizers/     # Platform-specific normalizers
-│   └── store/             # DB models and StandardDB abstraction
-├── tests/
-│   ├── unit/              # Fast unit tests (no external deps)
-│   │   ├── standardizers/ # Tests for base, row, utils + platform tests
-│   │   └── networks/      # Tests for network builders
-│   └── integration/       # DB integration tests (require Postgres)
-├── scripts/               # Convenience scripts
-├── prompt.yml             # Prompt templates for enrichers
-└── pyproject.toml         # Project metadata and dependencies
-```
+## Table of Contents
+- [Features](#features)
+- [Prerequisites & Database Setup](#prerequisites--database-setup)
+- [Installation & Quickstart](#installation--quickstart)
+- [Usage](#usage)
+    - [1. Standardize Raw Exports](#1-standardize-raw-exports)
+    - [2. Inspect Data Quality](#2-inspect-data-quality)
+    - [3. Build Networks](#3-build-networks)
+- [Project Structure](#project-structure)
+- [Data Model](#data-model)
+- [Development & Testing](#development--testing)
+- [Citation](#citation)
 
-### Source structure (what's in `src/smdt`)
+## Features
 
-A short tour of the main packages under `src/smdt` to help you find the right code to extend or reuse:
+* **Ingest & Standardize:** Convert raw platform exports (Twitter/X, Bluesky, TruthSocial) into normalized SQL tables (`Communities`, `Accounts`, `Posts`, `Actions`, `Entities`).
+* **Anonymize & Redact:** Remove or pseudonymize sensitive fields using policy-driven helpers before sharing datasets.
+* **Enrich & Label:** Apply computed features (language detection, toxicity scores, embeddings) via a local or server-backed enrichment framework.
+* **Build Networks:** Generate edge lists (User–User, Entity–Cooccurrence) and bipartite graphs compatible with NetworkX and Gephi.
+* **Scale:** Designed for streaming; handles datasets that do not fit in memory using incremental builders and Parquet exports.
 
-- `anonymizer/` — small utilities for redaction and pseudonymization (`anonymizer.py`, `redact.py`, `pseudonyms.py`, `policy.py`). Use these to strip or replace sensitive fields before sharing derived datasets.
-- `enrichers/` — text enrichment framework:
-  - `registry.py` and `runner.py` manage and execute enrichers.
-  - `local/` contains lightweight on-device enrichers (language detection, detox models).
-  - `server/` contains adapters for remote text-generation or model servers and prompt templates.
-- `ingest/` — ingestion helpers and pipelines (`pipeline.py`, `dedup.py`, `plan.py`) used to assemble and clean normalized tables from raw inputs.
-- `io/` — streaming readers and archive helpers. Look in `io/readers` for pluggable readers (`jsonl`, `json`, `csv_pd`, `zip`, `tar`) and `archive_stream.py` for streaming archives.
-- `networks/` — core network-building logic and helpers:
-  - `builders/` implements concrete builders: `user_interaction`, `entity_cooccurrence`, `bipartite`, `coaction`.
-  - `api.py` exposes convenient functions like `user_interaction()` and streaming helpers `iter_user_interaction_edges()`.
-  - `streams.py` and `io_utils.py` help stream large edge tables in chunks.
-- `standardizers/` — platform-specific normalizers that map platform export formats (Twitter, Bluesky, TruthSocial) into the normalized table schema. See the subfolders `twitter/`, `bluesky/`, `truthsocial/` for examples.
-- `store/` — models and the `StandardDB` abstraction for storing and querying normalized tables. Models live in `store/models/` (posts, accounts, actions, entities, enrichments). `standard_db.py` contains the Postgres-backed helper used by network builders.
-- `inspector/` — small inspection utilities and notebooks/docs for exploring datasets and schemas.
 
-If you're adding support for a new platform, implement a new `standardizers/<platform>/` module to map raw exports into the normalized tables, and add a test in `tests/`.
+## Prerequisites & Database Setup
 
-## Functionalities
+**System Requirements:**
+* Python 3.11+
+* PostgreSQL 14.19+
+* TimescaleDB Extension
+* PostGIS Extension
 
-- Ingest & standardize
+### Database Installation
+SMDT requires a PostgreSQL database with both the TimescaleDB and PostGIS extensions enabled.
 
-  - Convert raw platform exports (JSON / JSONL / CSV) into normalized tables: `posts`, `users`, `entities`, and `interactions`.
-  - Implementations for platform-specific formats live under `src/smdt/standardizers/` (examples: `twitter/`, `bluesky/`, `truthsocial/`).
+<details>
+<summary><strong>Click to expand detailed PostgreSQL, TimescaleDB & PostGIS Installation Guide</strong></summary>
 
-- Anonymize & redact
+### 1. Install PostgreSQL 14.19
 
-  - Remove, redact, or pseudonymize sensitive fields before sharing derived datasets.
-  - Policy-driven helpers and pseudonym maps are available in `src/smdt/anonymizer/`.
+**Windows**
+1. Download version 14.19 from the [EDB PostgreSQL Archive](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
+2. Run the installer (Default port: `5432`). Set a password for the `postgres` user.
+3. Add `C:\Program Files\PostgreSQL\14\bin` to your System `Path` environment variable.
 
-- Enrich & label
-
-  - Add computed features or labels to posts (language, summaries, toxicity scores, embeddings) via the enrichers framework.
-  - Check `src/smdt/enrichers/` for adapters (local and server-backed) and `prompt.yml` for prompt templates.
-
-- Build networks
-  - Produce edge lists and node tables for analysis: user–user interaction graphs, entity co-occurrence graphs, and bipartite graphs.
-  - Network builders and streaming helpers are in `src/smdt/networks/` and support exporting to Parquet or converting to NetworkX for downstream analysis.
-
-## Standardizers
-
-The project uses the following data model:
-
-- posts
-  - post_id (string), user_id (string), created_at (ISO8601), text (string), lang (string)
-  - reply_to_post_id, retweet_of_post_id, quote_of_post_id (nullable)
-  - hashtags, urls, mentions (JSON/list), metadata (raw)
-- users
-  - user_id (string), screen_name, name, created_at, followers_count, friends_count, verified, metadata
-- entities
-  - post_id, entity_text, entity_type (e.g. HASHTAG, PERSON), start, end, normalized
-- interactions
-  - src_user_id, dst_user_id, interaction_type (reply/retweet/mention/quote), post_id, created_at
-
-Include these column names when adapting your normalizer so builders and enrichers can consume the outputs.
-
-## Enrichers & Anonymization
-
-- `src/smdt/enrichers` contains a small registry and runner for text enrichers (language detection, detoxify wrappers, and server-backed prompt adapters).
-- `src/smdt/anonymizer` provides simple pseudonymization and redaction utilities. Use these before sharing derived datasets.
-- `prompt.yml` defines small prompt templates (e.g., `summarize_en`, `toxicity_label`) you can use with a text-generation/enricher adapter.
-
-## Inspector
-
-- `src/smdt/inspector` contains utilities to quickly inspect tables (either in a Postgres `StandardDB` or multiple databases) and report per-table completeness and enum/value distributions. It is useful for a quick data-quality check before heavy processing or sharing datasets.
-
-Quick usage (assumes DB credentials / env vars are configured for `DBConfig`):
-
-```python
-from smdt.config import DBConfig
-from smdt.store.standard_db import StandardDB
-from smdt.inspector.inspector import Inspector, report_schemas
-
-cfg = DBConfig()  # reads DB_* env vars
-db = StandardDB(db_name=cfg.default_dbname or "mydb", cfg=cfg)
-ins = Inspector(db, schema=getattr(cfg, "owner", "public"))
-report_schemas([ins], only_tables=["posts", "actions", "users"])
+**macOS (Homebrew)**
+```bash
+brew install postgresql@14
+brew services start postgresql@14
+brew link --force postgresql@14
 ```
 
-The `report_schemas()` helper prints colored completeness and top enum values per column. You can create multiple `Inspector` instances (pointing at different DBs/schemas) to compare schemas side-by-side.
-
-## Quickstart
-
-Minimum requirement: Python 3.11+ (see `pyproject.toml`). Make sure you have `uv` available, and sync the environment from the project's `pyproject.toml` / `uv.lock`:
+**Linux (Ubuntu/Debian)**
 
 ```bash
-uv sync
+sudo sh -c 'echo "deb [http://apt.postgresql.org/pub/repos/apt](http://apt.postgresql.org/pub/repos/apt) $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+wget --quiet -O - [https://www.postgresql.org/media/keys/ACCC4CF8.asc](https://www.postgresql.org/media/keys/ACCC4CF8.asc) | sudo apt-key add -
+sudo apt update
+sudo apt install postgresql-14
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
 ```
 
-### Running tests
+### 2. Install TimescaleDB
+
+**Windows**
+
+1.  Download the `.zip` for Windows (amd64) from [TimescaleDB Releases](https://github.com/timescale/timescaledb/releases).
+    
+2.  Extract the folder.
+    
+3.  Run PowerShell as Administrator, navigate to the folder, and run `.\setup.exe`.
+    
+4.  Restart the PostgreSQL service via `services.msc`.
+    
+
+**macOS**
 
 ```bash
-# Run all tests
-uv run python -m pytest
-
-# Run only unit tests (fast, no external dependencies)
-uv run python -m pytest tests/unit
-
-# Run only integration tests (requires Postgres via TEST_DATABASE_URL)
-uv run python -m pytest tests/integration
-
-# Exclude integration tests
-uv run python -m pytest -m "not integration"
-
-# Verbose output with test names
-uv run python -m pytest -v
+brew tap timescale/tap
+brew install timescaledb
+timescaledb-tune --quiet --yes
+brew services restart postgresql@14
 ```
 
-Integration tests require a `TEST_DATABASE_URL` environment variable pointing to a Postgres database. You can set this in `.env.test`:
-
-```env
-TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/testdb
+**Linux**
+```bash
+sudo add-apt-repository ppa:timescale/timescaledb-ppa
+sudo apt-get update
+sudo apt install timescaledb-2-postgresql-14
+sudo timescaledb-tune --quiet --yes
+sudo systemctl restart postgresql
 ```
 
-### What to run next
+### 3. Install PostGIS
 
-**1. Standardize raw exports**
+**Windows**
 
-Platform-specific standardizers convert raw exports (JSONL/CSV) into normalized DB models. Each standardizer's `.standardize(record)` method yields model instances (Posts, Accounts, Entities, Actions):
+1.  Open the **Stack Builder** utility (installed with PostgreSQL).
+    
+2.  Select your PostgreSQL 14 installation.
+    
+3.  Expand **Spatial Extensions** and check **PostGIS 3.x Bundle for PostgreSQL 14**.
+    
+4.  Follow the prompts to install, then restart the PostgreSQL service.
+    
 
+**macOS**
+
+```bash
+brew install postgis
+brew services restart postgresql@14
+```
+
+**Linux** 
+
+```bash
+sudo apt install postgresql-14-postgis-3
+sudo systemctl restart postgresql
+```
+
+### 4. Initialize Database
+
+Run the following SQL commands to create the database and enable the extensions:
+
+**Connect to Postgres:**
+
+```bash
+# Mac/Linux
+psql -U postgres
+
+# Windows
+psql -U postgres
+```
+
+**Run SQL:** 
+
+```sql
+CREATE DATABASE project_db;
+CREATE USER project_user WITH ENCRYPTED PASSWORD 'your_password_here';
+GRANT ALL PRIVILEGES ON DATABASE project_db TO project_user;
+
+\c project_db
+
+-- Enable Extensions
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- Verify installation
+\dx
+```
+
+</details>
+
+
+## Installation & Quickstart
+
+This project uses `uv` for fast Python package management. For detailed instructions, refer to the [uv Installation Guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+1.  **Clone the Repository**
+    ```bash
+    git clone [https://github.com/ViralLab/SMDT](https://github.com/ViralLab/SMDT)
+    cd SMDT
+    ```
+    
+2.  **Initialize Environment**
+ 
+    ```bash
+    uv init
+    uv venv
+    source venv/bin/activate  # On Windows: .venv\Scripts\activate
+    ```
+    
+3.  **Install Dependencies**
+        
+    ```bash
+    uv sync
+    ```
+    
+4.  **Configure Environment**
+    
+    Create a `.env` file or set environment variables for your database connection:
+        
+    ```
+    DEFAULT_DB_NAME=project_db
+    DB_USER=project_user
+    DB_PASSWORD=your_password_here
+    DB_HOST=localhost
+    DB_PORT=5432
+    ```
+   
+
+## Usage
+
+### 1. Standardize Raw Exports
+
+Convert raw JSONL data into normalized objects (Posts, Accounts, Entities, Actions).
+ 
 ```python
 from smdt.standardizers.twitter.twitter_v2 import TwitterV2Standardizer
 from smdt.io.readers.jsonl import JSONLReader
@@ -158,28 +209,32 @@ from smdt.io.readers.jsonl import JSONLReader
 standardizer = TwitterV2Standardizer()
 
 # Stream through a JSONL export
-for record in JSONLReader("tweets.jsonl"):
+for record in JSONLReader("data/tweets.jsonl"):
     for model in standardizer.standardize(record):
-        # model is a Posts, Accounts, Entities, or Actions instance
+        # model is an instance of Posts, Accounts, Entities, or Actions
         print(model)
 ```
 
-**2. Inspect the content of a StandardDB**
+### 2. Inspect Data Quality
+
+Check the completeness and schema distributions of your normalized tables.
 
 ```python
 from smdt.config import DBConfig
 from smdt.store.standard_db import StandardDB
 from smdt.inspector.inspector import Inspector, report_schemas
 
-cfg = DBConfig()
+cfg = DBConfig() # reads DB_* env vars
 db = StandardDB(db_name=cfg.default_dbname or 'mydb', cfg=cfg)
 ins = Inspector(db, schema=getattr(cfg, 'owner', 'public'))
+
 report_schemas([ins], only_tables=['posts', 'actions', 'accounts'])
+
 ```
 
-**3. Build networks**
+### 3. Build Networks
 
-Once you have normalized data in a DB, use the high-level API to build networks:
+Generate interaction graphs for analysis.
 
 ```python
 from smdt.config import DBConfig
@@ -190,34 +245,87 @@ cfg = DBConfig()
 db = StandardDB(db_name="mydb", cfg=cfg)
 
 # User interaction network (who quoted whom)
+# Result is a DataFrame with src, dst, weight, edge_type
 result = user_interaction(db, interaction="QUOTE", weighting="count")
-print(result.edges.head())  # DataFrame with src, dst, weight, edge_type
+print(result.edges.head())
 
-# Hashtag co-occurrence network
-result = entity_cooccurrence(db, entity_type="HASHTAG", weighting="binary")
-print(result.nodes.head())  # DataFrame with node_id, label, type
-```
-
-Export to Parquet/CSV for downstream analysis (NetworkX, Gephi, etc.):
-
-```python
+# Export to Parquet for Gephi/NetworkX
 result.edges.to_parquet("edges.parquet")
-result.nodes.to_csv("nodes.csv", index=False)
 ```
 
-## Contribution and development notes
 
-- Follow the existing code style and add tests for new behavior.
-- **Unit tests** go in `tests/unit/` — these should be fast and not require external services.
-- **Integration tests** go in `tests/integration/` — these require a database and are auto-marked with `@pytest.mark.integration`.
-- If you add or change public APIs (builders, store interfaces), update tests accordingly.
-- Use the network builders and streaming IO when working with datasets that don't fit in memory. Builders are designed to be incremental and work with Parquet/CSV or DB-backed tables.
+## Project Structure
 
-### Test conventions
+```
+SMDT/
+├── src/smdt/                  # Main package
+│   ├── anonymizer/            # Redaction and pseudonymization utilities
+│   ├── config.py              # Configuration (DB, anonymization)
+│   ├── enrichers/             # Text enrichment framework (local + server adapters)
+│   ├── ingest/                # Ingestion pipelines and deduplication logic
+│   ├── inspector/             # Data quality inspection utilities
+│   ├── io/                    # Streaming readers (JSONL, CSV, ZIP)
+│   ├── networks/              # Network builders and streaming helpers
+│   ├── standardizers/         # Platform-specific normalizers (Twitter, Bluesky, etc.)
+│   └── store/                 # DB models and StandardDB abstraction
+├── tests/
+│   ├── unit/                  # Fast unit tests (no external deps)
+│   └── integration/           # DB integration tests (requires Postgres)
+├── prompt.yml                 # Prompt templates for enrichers
+└── pyproject.toml             # Project metadata and dependencies
+```
 
-- Each test function tests one function, calling it once.
-- Use `result` as the variable name for the function output being tested.
-- Use parametrization (`@pytest.mark.parametrize`) for testing multiple inputs.
-- Each test function should have a docstring describing what it tests.
+
+## Data Model
+
+SMDT normalizes data into four primary tables. If creating a new standardizer, ensure your output maps to these fields:
+
+
+| Table | Key Fields |
+| :--- | :--- |
+| **Communities** | `community_id`, `community_type`(CHANNEL/GROUP), `community_username`, `community_name`, `bio`, `is_public`, `member_count`, `post_count`, `profile_image_url`, `owner_account_id`, `created_at`, `retrieved_at`  |
+| **Accounts** | `account_id`, `username`, `profile_name`, `bio`, `location`, `post_count`,`friend_count`, `follower_count`, `is_verified`, `profile_image_url`,  `created_at`, `retrieved_at`|
+| **Posts** | `post_id`, `account_id`, `conversation_id`, `community_id`, `body`, `like_count`, `dislike_count`, `view_count`, `share_count`, `comment_count`, `quote_count`, `bookmark_count`|
+| **Entities** | `account_id`, `community_id`, `post_id` , `body`, `entity_type` (e.g HASHTAG), `created_at`, `retrieved_at` |
+| **Actions** | `originator_account_id`, `originator_post_id`, `target_account_id`, `target_post_id`, `originator_community_id`, `target_community_id`, `action_type` (e.g SHARE), `created_at`, `retrieved_at` |
+
+--- 
+----------
+
+## Development & Testing
+
+Please ensure you follow existing code styles and add tests for new behaviors.
+
+### Running Tests
+
+Integration tests require a database. Set `TEST_DATABASE_URL` in your `.env.test`.
+```bash
+# Run all tests
+uv run python -m pytest
+
+# Run only unit tests (fast, no DB required)
+uv run python -m pytest tests/unit
+
+# Run only integration tests
+uv run python -m pytest tests/integration
+
+# Verbose output
+uv run python -m pytest -v
+```
+
+### Adding a Platform
+
+To add support for a platform like Threads:
+
+1.  Create a new module in `src/smdt/standardizers/threads/` that maps raw data to the normalized models.
+    
+2.  Update `src/smdt/standardizers/__init__.py` to import and expose the new standardizer.
+    
+
+## <a name="citation"></a> Citation
+```bibtex
+```
 
 ## License
+
+[License Information Here]
