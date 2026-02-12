@@ -70,19 +70,23 @@ class AnonPolicy:
 
 DEFAULT_POLICY = AnonPolicy(
     hash_cols={
+        "communities": {"community_id", "community_username", "community_name", "bio"},
         "accounts": {"account_id", "username", "profile_name"},
-        "posts": {"post_id", "account_id", "conversation_id"},
+        "posts": {"post_id", "account_id", "conversation_id", "community_id"},
         "actions": {
             "originator_account_id",
             "originator_post_id",
+            "originator_community_id",
             "target_account_id",
             "target_post_id",
+            "target_community_id",
         },
-        "entities": {"post_id", "account_id"},
+        "entities": {"post_id", "account_id", "community_id"},
         "account_enrichments": {"account_id"},
         "post_enrichments": {"post_id"},
     },
     redact_cols={
+        "communities": {"bio"},
         "accounts": {"bio"},
         "posts": {"body"},
     },
