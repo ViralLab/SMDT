@@ -9,18 +9,30 @@ export default defineConfig({
   cleanUrls: true,
   markdown: {
     html: true,
-    headers: { level: [2, 3, 4] }
+    headers: { level: [2, 3, 4] }, 
   },
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     nav: [
       { text: 'Home', link: '/' },
-      { text: 'Examples', link: '/markdown-examples' }
+      { text: 'Examples', link: '/examples/' },
+      { text: 'About Us', link: '/about' }
     ],
 
     sidebar: {
-      '/api/': apiSidebar
+      '/api/': apiSidebar,
+      '/examples/': [
+        {
+          text: 'Examples',
+          items: [
+            { text: 'Overview', link: '/examples/' },
+            { text: 'Getting Started', link: '/examples/getting-started' }
+          ]
+        }
+      ]
     },
+
+    search: { provider: 'local' },
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/ViralLab/SMDT' }

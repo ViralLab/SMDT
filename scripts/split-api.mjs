@@ -15,6 +15,52 @@ const OUT_DIR = 'site/api';
 
 // ---- helpers ---------------------------------------------------------------
 
+function cleanTitle(modName) {
+  let parts = modName.split('.');
+
+  // Remove 'smdt' prefix if present
+  if (parts[0] === 'smdt') parts.shift();
+
+  // Remove the group name if it's the first remaining part and there are more parts
+  if (parts.length > 1) {
+    parts.shift();
+  }
+
+  // Smart Deduplication
+  const finalParts = [];
+  for (const part of parts) {
+    const last = finalParts[finalParts.length - 1];
+    if (!last) {
+      finalParts.push(part);
+      continue;
+    }
+    
+    // Case 1: Exact duplicate (gab -> gab)
+    if (part === last) {
+      continue;
+    }
+
+    // Case 2: Prefix duplicate (bluesky -> bluesky_api)
+    // If the new part starts with the last part + '_', replace the last part
+    if (part.startsWith(last + '_')) {
+      finalParts.pop();
+      finalParts.push(part);
+      continue;
+    }
+
+    finalParts.push(part);
+  }
+  
+  // Format to Title Case
+  return finalParts
+    .map(p => {
+      return p
+        .replace(/[_\-]+/g, ' ')
+        .replace(/\b[a-z]/g, c => c.toUpperCase());
+    })
+    .join(' ');
+}
+
 const toTitle = (s) =>
   s
     .replace(/[_.-]+/g, ' ')
@@ -23,13 +69,10 @@ const toTitle = (s) =>
 function groupFor(mod) {
   // mod like: smdt.enrichers.server.textgen.textgen
   const parts = mod.split('.');
-  // smdt | enrichers | readers | standardizers | store | ingest | inspector | io | ...
-  if (parts[1] === 'enrichers') return 'enrichers';
-  if (parts[1] === 'standardizers') return 'standardizers';
-  if (parts[1] === 'store') return 'store';
-  if (parts[1] === 'ingest') return 'ingest';
-  if (parts[1] === 'inspector') return 'inspector';
-  if (parts[1] === 'io') return 'io';
+  // Dynamic grouping based on second part of the module name (e.g. smdt.enrichers -> enrichers)
+  if (parts.length > 1) {
+    return parts[1];
+  }
   return 'misc';
 }
 
@@ -58,10 +101,13 @@ const sections = [];
 let cur = null;
 
 for (const line of lines) {
-  const m = line.match(/^#\s+([A-Za-z0-9_.]+)\s*$/);
+  // Match headers, allowing for escaped characters (like \_)
+  const m = line.match(/^#\s+([A-Za-z0-9_.\\\\]+)\s*$/);
   if (m) {
     if (cur) sections.push(cur);
-    cur = { name: m[1], body: [line] };
+    // Unescape the captured name
+    const rawName = m[1].replace(/\\/g, '');
+    cur = { name: rawName, body: [line] };
   } else if (cur) {
     cur.body.push(line);
   }
@@ -72,7 +118,7 @@ if (cur) sections.push(cur);
 for (const s of sections) {
   let body = s.body.join('\n').replace(/^\s*<a id="[^"]+"><\/a>\s*\n?/gm, '');
   // Ensure H1 stays first line (already there), but add frontmatter with a nice title
-  const pageTitle = toTitle(s.name.replace(/^smdt\./, ''));
+  const pageTitle = cleanTitle(s.name);
   const front = `---\ntitle: ${pageTitle}\noutline: deep\n---\n\n`;
   s.text = pageTitle;
   s.body = front + body;
@@ -95,7 +141,8 @@ const grouped = written.reduce((acc, w) => {
   return acc;
 }, {});
 
-const groupsOrder = ['enrichers', 'standardizers', 'store', 'ingest', 'inspector', 'io', 'misc'];
+// Dynamically determine group order
+const groupsOrder = Object.keys(grouped).sort();
 
 let indexMd =
   (fm || '---\noutline: deep\n---\n') +
