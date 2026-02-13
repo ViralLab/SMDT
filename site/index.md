@@ -3,9 +3,8 @@
 layout: home
 
 hero:
-  name: 'SocialMedia Data Toolkit'
+  name: '<span id="hero-typewriter" style="opacity:0">Social Media Data Toolkit</span><span class="cursor">|</span>'
   text: 'SMDT'
-  tagline: My great project tagline
   actions:
     - theme: brand
       text: API Reference
