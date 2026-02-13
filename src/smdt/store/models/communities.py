@@ -12,6 +12,10 @@ except ImportError:
 
 
 class CommunityType(StrEnum):
+    """
+    Enumeration of community types.
+    """
+
     CHANNEL = "CHANNEL"
     GROUP = "GROUP"
 
@@ -45,6 +49,10 @@ class Communities:
 
     # -------- Validation / normalization --------
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+        Standardizes timestamps and string values.
+        """
         # Ensure created_at is timezone-aware (UTC if naive)
         ca = self.created_at
         if ca.tzinfo is None or ca.tzinfo.utcoffset(ca) is None:

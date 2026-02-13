@@ -65,13 +65,26 @@ def _dt(s: Optional[str]) -> Optional[datetime]:
 
 @dataclass
 class TwitterUSCStandardizer(Standardizer):
+    """
+    Standardizer for Twitter data (USC dataset).
+
+    This class processes records from Twitter exports (USC collection), normalizing them into the standard
+    schema models (Accounts, Posts, Entities, Actions).
+    """
+
     name: str = "twitter_usc"
 
     def standardize(
         self, input_record: Tuple[Mapping[str, Any], SourceInfo]
     ) -> Iterable[Any]:
         """
-        Standardize a single Twitter USC row into Accounts, Posts, Entities, Actions.
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+            input_record (Tuple[Mapping[str, Any], SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+            Iterable[Any]: An iterable of standardized models (Accounts, Posts, Entities, Actions) derived from the input record.
         """
         outputs: List[Any] = []
         record, _src = input_record

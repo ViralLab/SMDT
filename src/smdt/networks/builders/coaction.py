@@ -1,3 +1,7 @@
+"""
+Builder for co-action networks (e.g. users commenting on the same post).
+"""
+
 from typing import Any, Dict, Tuple
 import pandas as pd
 
@@ -13,7 +17,7 @@ class CoActionNetworkBuilder(NetworkBuilder):
     Two users are connected if they both performed the same action_type
     (COMMENT, QUOTE, SHARE, etc.) on the same target_post_id.
 
-    This captures "shared engagement" relationships — users reacting to
+    This captures "shared engagement" relationships - users reacting to
     the same content in similar ways.
 
     Edge semantics
@@ -23,8 +27,8 @@ class CoActionNetworkBuilder(NetworkBuilder):
       edge_type: CO_<ACTION_TYPE>
 
     Example:
-      A → Post123 (COMMENT)
-      B → Post123 (COMMENT)
+      A -> Post123 (COMMENT)
+      B -> Post123 (COMMENT)
         => edge (A, B) in the CO_COMMENT network
     """
 

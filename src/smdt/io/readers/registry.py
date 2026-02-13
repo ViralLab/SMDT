@@ -1,3 +1,7 @@
+"""
+Plugin registry for readers.
+"""
+
 from __future__ import annotations
 
 from importlib.metadata import entry_points
@@ -38,19 +42,19 @@ def discover(group: str = "smdt.readers") -> None:
         group: Entry point group name.
     """
     try:
-        eps = entry_points(group=group)  # py3.10+
+        eps = entry_points(group=group)
     except TypeError:
-        eps_all = entry_points()  # older importlib.metadata
-        eps = getattr(eps_all, "select", lambda **kw: [])(group=group)  # type: ignore
+        eps_all = entry_points()
+        eps = getattr(eps_all, "select", lambda **kw: [])(group=group)
 
     for ep in eps:
         obj: Any = ep.load()
         if callable(obj) and not hasattr(obj, "supports"):
-            obj = obj()  # factory returning a Reader
+            obj = obj()
         if hasattr(obj, "supports") and (
             hasattr(obj, "stream") or hasattr(obj, "read")
         ):
-            register(obj)  # type: ignore[arg-type]
+            register(obj)
 
 
 def get_reader(uri: str, *, content_type: Optional[str] = None) -> Optional[Reader]:
@@ -70,7 +74,6 @@ def get_reader(uri: str, *, content_type: Optional[str] = None) -> Optional[Read
             if r.supports(uri, content_type=content_type):
                 return r
         except Exception:
-            # Ignore a misbehaving plugin and try the next one
             continue
     return None
 
@@ -96,11 +99,10 @@ def read(uri: str, **kwargs) -> Iterable[dict]:
         raise RuntimeError(f"No reader found for {uri}")
 
     if hasattr(r, "stream"):
-        return r.stream(uri, **kwargs)  # type: ignore[attr-defined]
+        return r.stream(uri, **kwargs)
     if hasattr(r, "read"):
-        return r.read(uri, **kwargs)  # type: ignore[attr-defined]
+        return r.read(uri, **kwargs)
 
-    # Shouldn't happen due to checks above
     raise RuntimeError(f"Reader {type(r).__name__} does not implement stream/read")
 
 
@@ -121,12 +123,10 @@ def read_from_filelike(
     Returns:
         Iterable of records.
     """
-    # Find a reader based on the member name (may include multi-suffixes)
     r = get_reader(member_name or "")
     if r and hasattr(r, "stream_from_filelike"):
-        return r.stream_from_filelike(f, member_name=member_name, **kwargs)  # type: ignore[attr-defined]
+        return r.stream_from_filelike(f, member_name=member_name, **kwargs)
 
-    # Fallback: dump to a temp file and call read()
     import tempfile, shutil, os
 
     suffix = "".join(Path(member_name or "member.bin").suffixes) or ".bin"

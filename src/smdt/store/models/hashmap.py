@@ -5,6 +5,11 @@ from typing import Optional, Mapping, Any, Tuple, List
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class HashMap:
+    """
+    Python model for `hash_map` table.
+    Generic key-value store.
+    """
+
     # Required fields
     hash_key: str = field()
     created_at: datetime = field()
@@ -19,6 +24,12 @@ class HashMap:
 
     # -------- Validation / normalization --------
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+
+        Raises:
+            ValueError: If hash_key is empty.
+        """
         # hash_key required
         if not self.hash_key or not self.hash_key.strip():
             raise ValueError("hash_key is required and cannot be empty")
@@ -36,10 +47,16 @@ class HashMap:
     # -------- DB helpers --------
     @staticmethod
     def insert_columns(include_id: bool = False) -> Tuple[str, ...]:
+        """
+        Ordered column list for INSERT statements.
+        """
         cols = ("hash_key", "hash_value", "created_at")
         return ("id",) + cols if include_id else cols
 
     def insert_values(self, include_id: bool = False) -> Tuple[Any, ...]:
+        """
+        Values tuple aligned with insert_columns().
+        """
         vals = (
             self.hash_key,
             self.hash_value,
@@ -49,6 +66,9 @@ class HashMap:
 
     @classmethod
     def from_db_row(cls, row: Mapping[str, Any]) -> "HashMap":
+        """
+        Hydrate from a dict-like DB row.
+        """
         return cls(
             hash_key=row["hash_key"],  # NOT NULL
             created_at=row["created_at"],  # NOT NULL
@@ -60,4 +80,7 @@ class HashMap:
     def make_bulk_params(
         items: List["HashMap"], include_id: bool = False
     ) -> List[Tuple[Any, ...]]:
+        """
+        Convert a list of HashMap items to INSERT parameter tuples.
+        """
         return [h.insert_values(include_id=include_id) for h in items]

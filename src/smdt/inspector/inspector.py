@@ -13,20 +13,32 @@ colorama_init(autoreset=True)
 # =============================================================
 @dataclass
 class ColStat:
-    """Statistics for a single column."""
+    """Statistics for a single column.
+
+    Attributes:
+        data_type: The data type of the column.
+        completeness: Fraction of non-null values (0..1), or None if not computable.
+        enum_counts: List of (val, count, pct) tuples for enum values, if applicable.
+    """
 
     data_type: str
-    completeness: Optional[float]  # 0..1, or None if not computable
-    enum_counts: Optional[List[Tuple[str, int, float]]] = None  # (val, count, pct)
+    completeness: Optional[float]
+    enum_counts: Optional[List[Tuple[str, int, float]]] = None
 
 
 @dataclass
 class TableStat:
-    """Statistics for a table: estimated rows and per-column stats."""
+    """Statistics for a table: estimated rows and per-column stats.
+
+    Attributes:
+        est_rows: Estimated number of rows in the table.
+        columns: Dictionary mapping column names to ColStat objects.
+        extra: Optional extra payload for table-specific stats
+               (e.g., actions links per action_type).
+    """
 
     est_rows: int
-    columns: Dict[str, ColStat]  # col_name -> ColStat
-    # Optional extra payload for table-specific stats (e.g., actions links per action_type)
+    columns: Dict[str, ColStat]
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -285,10 +297,18 @@ class Inspector:
 
     # -------- actions-specific helper --------------------------------
     def _actions_link_stats(self, cur, table: str) -> Dict[str, Any]:
-        """
-        For the actions table, compute per-action_type completeness of:
-        target_account_id, target_post_id, originator_account_id, originator_post_id,
-        originator_community_id, target_community_id.
+        """Compute per-action_type completeness statistics for the actions table.
+
+        Computes completeness for: target_account_id, target_post_id,
+        originator_account_id, originator_post_id, originator_community_id,
+        target_community_id.
+
+        Args:
+            cur: Database cursor.
+            table: Table name.
+
+        Returns:
+            Dictionary containing 'actions_links_per_type' list.
         """
         cur.execute(
             f"""
@@ -365,14 +385,14 @@ def report_schemas(
     inspectors: List["Inspector"],
     *,
     only_tables: Optional[List[str]] = None,
-    show_counts: bool = True,  # applies to enum rows; completeness always shows (nn/total)
+    show_counts: bool = True,
 ) -> None:
     """Generate and print a schema report.
 
     Args:
         inspectors: List of Inspector instances.
         only_tables: Optional list of tables to include.
-        show_counts: Whether to show counts in enum stats.
+        show_counts: Whether to show counts in enum stats (completeness always shows nn/total).
     """
     allow = {_norm_tbl_name(t) for t in only_tables} if only_tables else None
 
@@ -421,6 +441,7 @@ def report_schemas(
 
     # -------- Small helpers (rendering) --------
     def _enum_cell(cnt: Optional[int], pct: Optional[float]) -> str:
+        """Format an enum cell with count and percentage."""
         if pct is None:
             return _dim("—")
         pct_s = _color_pct(pct)
@@ -433,12 +454,14 @@ def report_schemas(
     def _comp_cell(
         nn: Optional[int], total: Optional[int], pct: Optional[float]
     ) -> str:
+        """Format a completeness cell with non-null count, total, and percentage."""
         if pct is None or nn is None or total is None:
             return _dim("—")
         pct_s = _color_pct(pct)
         return f"{_dim(f'({nn:,}/{total:,})')} {pct_s}"
 
     def _all_action_types_for_table(tname: str) -> List[str]:
+        """Get all unique action types seen across snapshots for a given table."""
         if _norm_tbl_name(tname) != "actions":
             return []
         seen_list: List[str] = []
@@ -469,6 +492,7 @@ def report_schemas(
         )
 
         def _dtype_for(col: str) -> str:
+            """Get data type for a column from the first available snapshot."""
             for snap in snaps:
                 st = snap.get(tname)
                 if st and col in st.columns:
@@ -484,6 +508,7 @@ def report_schemas(
         )
 
         def _enum_values_for(col: str) -> List[str]:
+            """Get all unique enum values across snapshots for a column."""
             seen_vals, seen_set = [], set()
             for snap in snaps:
                 st = snap.get(tname)

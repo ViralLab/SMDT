@@ -13,3 +13,4 @@ renderer:
   type: markdown
   filename: 'site/api/index.md' # single-file output for VitePress
   render_toc: false
+  insert_header_anchors: false

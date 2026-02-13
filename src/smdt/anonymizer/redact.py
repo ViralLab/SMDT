@@ -1,3 +1,5 @@
+"""Redaction utility."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Pattern, Callable
@@ -29,12 +31,10 @@ class Redactor:
     def __post_init__(self):
         L = "\\p{L}" if _UNICODE else "A-Za-z"
         N = "\\p{Nd}" if _UNICODE else "0-9"
-        # Patterns
         self._re_mention: Pattern = re.compile(rf"(?<!\w)@([{L}{N}_.]{{1,64}})")
         self._re_email: Pattern = re.compile(
             r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
         )
-
         self._urlx = URLExtract()
 
     def _normalize_host(self, url_or_host: str) -> str | None:
@@ -84,21 +84,16 @@ class Redactor:
             return ""
         s = text
 
-        # Mentions
         def _m_sub(m):
             h = m.group(1)
             return "@u_" + self.handle_mapper(h.lower())
 
         s = self._re_mention.sub(_m_sub, s)
-
-        # Emails
         s = self._re_email.sub("[EMAIL]", s)
 
-        # URLs → domain tokens using URLExtract (handle multiple return shapes)
         try:
             urls_with_idx = self._urlx.find_urls(s, with_indices=True)
         except TypeError:
-            # older urlextract uses get_indices
             urls_with_idx = self._urlx.find_urls(s, get_indices=True)
 
         if urls_with_idx:

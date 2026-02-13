@@ -1,3 +1,7 @@
+"""
+Utilities for streaming network data from the database.
+"""
+
 from typing import Iterator
 
 import pandas as pd

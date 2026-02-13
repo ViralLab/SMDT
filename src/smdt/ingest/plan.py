@@ -1,5 +1,9 @@
 from __future__ import annotations
-import os, tarfile, zipfile
+import os
+import sys
+import tarfile
+import zipfile
+import ctypes
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional, Dict, Tuple
@@ -9,19 +13,43 @@ from datetime import datetime
 from smdt.io.readers import get_reader
 
 
+def setup_windows_console():
+    """
+    Configures the Windows console to support ANSI colors and UTF-8 characters.
+    """
+    if os.name == "nt":
+        # Force UTF-8 encoding for standard output to handle checkmarks (✓)
+        if sys.stdout.encoding != "utf-8":
+            sys.stdout.reconfigure(encoding="utf-8")
+
+        # Enable ANSI escape sequences (Virtual Terminal Processing)
+        try:
+            kernel32 = ctypes.windll.kernel32
+            # Get handle to stdout (STD_OUTPUT_HANDLE = -11)
+            hStdOut = kernel32.GetStdHandle(-11)
+            mode = ctypes.c_ulong()
+            if kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode)):
+                # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+                mode.value |= 4
+                kernel32.SetConsoleMode(hStdOut, mode)
+        except Exception:
+            # Fallback: formatting might look raw, but script won't crash
+            pass
+
+
 @dataclass
 class MemberPlan:
     """Plan for a single member within an archive.
 
     Attributes:
-        name: Path inside the archive.
-        reader_name: Name of the reader that will handle this member.
-        included: Whether this member is included after filtering.
+        name: Name of the member.
+        reader_name: Name of the reader to use.
+        included: Whether the member is included in the plan.
     """
 
-    name: str  # path inside archive
-    reader_name: Optional[str]  # which reader will handle this member
-    included: bool  # after include/exclude filters
+    name: str
+    reader_name: Optional[str]
+    included: bool
 
 
 @dataclass
@@ -29,30 +57,29 @@ class FilePlan:
     """Plan for a single file.
 
     Attributes:
-        path: File path.
-        size: File size in bytes.
-        mtime: Modification time timestamp.
-        reader_name: Name of the reader, or None if no reader found.
+        path: Path to the file.
+        size: Size of the file in bytes.
+        mtime: Modification time of the file.
+        reader_name: Name of the reader to use.
         is_archive: Whether the file is an archive.
-        members: List of member plans if the file is an archive.
+        members: List of members if the file is an archive.
     """
 
     path: str
     size: int
     mtime: float
-    reader_name: Optional[str]  # None if no reader can handle it
+    reader_name: Optional[str]
     is_archive: bool
     members: List[MemberPlan] = field(default_factory=list)
 
     @property
     def display_mtime(self) -> str:
-        """Get a human-readable modification time string."""
         return datetime.fromtimestamp(self.mtime).isoformat(timespec="seconds")
 
 
 @dataclass
 class Plan:
-    """Ingestion plan containing a list of files to process.
+    """Ingestion plan containing files to process.
 
     Attributes:
         files: List of file plans.
@@ -61,11 +88,6 @@ class Plan:
     files: List[FilePlan]
 
     def summary(self) -> Dict[str, int]:
-        """Generate a summary of the plan by reader type.
-
-        Returns:
-            Dictionary mapping reader names to file counts.
-        """
         by_reader: Dict[str, int] = {}
         for fp in self.files:
             if fp.is_archive:
@@ -81,15 +103,15 @@ class Plan:
 def _want(
     name: str, include: Optional[Tuple[str, ...]], exclude: Optional[Tuple[str, ...]]
 ) -> bool:
-    """Check if a name matches inclusion/exclusion patterns.
+    """Check if a file name matches the inclusion/exclusion patterns.
 
     Args:
-        name: Name to check.
-        include: Tuple of inclusion patterns.
-        exclude: Tuple of exclusion patterns.
+        name: File name to check.
+        include: Patterns to include.
+        exclude: Patterns to exclude.
 
     Returns:
-        True if the name should be included, False otherwise.
+        True if the file should be included, False otherwise.
     """
     if include:
         if not any(fnmatch(name, pat) for pat in include):
@@ -101,13 +123,13 @@ def _want(
 
 
 def _list_zip_members(p: Path) -> List[str]:
-    """List members of a zip file.
+    """List members of a zip archive.
 
     Args:
-        p: Path to the zip file.
+        p: Path to the zip archive.
 
     Returns:
-        List of member filenames.
+        List of member names.
     """
     try:
         with zipfile.ZipFile(p, "r") as zf:
@@ -117,13 +139,13 @@ def _list_zip_members(p: Path) -> List[str]:
 
 
 def _list_tar_members(p: Path) -> List[str]:
-    """List members of a tar file.
+    """List members of a tar archive.
 
     Args:
-        p: Path to the tar file.
+        p: Path to the tar archive.
 
     Returns:
-        List of member filenames.
+        List of member names.
     """
     try:
         with tarfile.open(p, "r:*") as tf:
@@ -133,14 +155,14 @@ def _list_tar_members(p: Path) -> List[str]:
 
 
 def _rank(name: str, patterns: Optional[Tuple[str, ...]]) -> int:
-    """Rank a name based on its position in a list of patterns.
+    """Rank a file name based on patterns.
 
     Args:
-        name: Name to rank.
-        patterns: Tuple of patterns.
+        name: File name to rank.
+        patterns: Patterns to rank by.
 
     Returns:
-        Rank index (lower is better), or a large number if not found.
+        Rank index (lower is better), or a large number if not matched.
     """
     if not patterns:
         return 10**9
@@ -153,93 +175,120 @@ def _rank(name: str, patterns: Optional[Tuple[str, ...]]) -> int:
 def plan_directories(
     roots: Iterable[str],
     *,
-    include: Optional[Iterable[str]] = None,  # top-level file filters
+    include: Optional[Iterable[str]] = None,
     exclude: Optional[Iterable[str]] = None,
-    order: Optional[Iterable[str]] = None,  # preferred file order
-    member_order: Optional[Iterable[str]] = None,  # preferred member order
-    member_include: Optional[Iterable[str]] = None,  # NEW: member-only include
-    member_exclude: Optional[Iterable[str]] = None,  # NEW: member-only exclude
+    order: Optional[Iterable[str]] = None,
+    member_order: Optional[Iterable[str]] = None,
+    member_include: Optional[Iterable[str]] = None,
+    member_exclude: Optional[Iterable[str]] = None,
 ) -> Plan:
     """Create an ingestion plan by scanning directories.
 
     Args:
-        roots: Iterable of root directories to scan.
-        include: Optional patterns to include files.
-        exclude: Optional patterns to exclude files.
-        order: Optional patterns to order files.
-        member_order: Optional patterns to order archive members.
-        member_include: Optional patterns to include archive members.
-        member_exclude: Optional patterns to exclude archive members.
+        roots: Root directories to scan.
+        include: Patterns to include.
+        exclude: Patterns to exclude.
+        order: Patterns to order files by.
+        member_order: Patterns to order archive members by.
+        member_include: Patterns to include archive members by.
+        member_exclude: Patterns to exclude archive members by.
 
     Returns:
-        Ingestion Plan object.
+        Ingestion plan.
     """
     inc = tuple(include) if include else None
     exc = tuple(exclude) if exclude else None
     ordp = tuple(order) if order else None
     mord = tuple(member_order) if member_order else None
-
-    # If caller didn’t specify member filters, default to “allow all”
     minc = tuple(member_include) if member_include else None
     mexc = tuple(member_exclude) if member_exclude else None
 
     files: List[FilePlan] = []
-    for root in roots:
-        root = os.path.expanduser(root)
-        for dirpath, _, filenames in os.walk(root):
-            for fn in filenames:
-                full = Path(dirpath) / fn
-                full_str = str(full)
 
-                # Apply only top-level filters to files
-                if not _want(full_str, inc, exc):
-                    continue
+    def _scan(directory: str):
+        """Recursively scan a directory for files.
 
-                st = full.stat()
-                is_archive = fn.lower().endswith(
-                    (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
-                )
-                reader = get_reader(full_str)
-                fp = FilePlan(
-                    path=full_str,
-                    size=st.st_size,
-                    mtime=st.st_mtime,
-                    reader_name=(reader.name if (reader and not is_archive) else None),
-                    is_archive=is_archive,
-                )
+        Args:
+            directory: Directory to scan.
+        """
+        try:
+            with os.scandir(directory) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False):
+                        _scan(entry.path)
+                        continue
 
-                if is_archive:
-                    # List archive members
-                    members = (
-                        _list_zip_members(full)
-                        if fn.lower().endswith(".zip")
-                        else _list_tar_members(full)
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+
+                    full_str = Path(entry.path).as_posix()
+
+                    if not _want(full_str, inc, exc):
+                        continue
+
+                    st = entry.stat()
+
+                    is_archive = entry.name.lower().endswith(
+                        (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
                     )
-                    member_plans: List[MemberPlan] = []
-                    for m in members:
-                        # Apply ONLY member filters to member names
-                        included = True
-                        if minc or mexc:
-                            included = _want(m, minc, mexc)
-                        sub_reader = get_reader(m)
-                        mp = MemberPlan(
-                            name=m,
-                            reader_name=(sub_reader.name if sub_reader else None),
-                            included=included and bool(sub_reader),
+
+                    try:
+                        reader = get_reader(full_str)
+                        r_name = reader.name if (reader and not is_archive) else None
+                    except Exception:
+                        r_name = None
+
+                    fp = FilePlan(
+                        path=full_str,
+                        size=st.st_size,
+                        mtime=st.st_mtime,
+                        reader_name=r_name,
+                        is_archive=is_archive,
+                    )
+
+                    if is_archive:
+                        p_obj = Path(entry.path)
+                        members = (
+                            _list_zip_members(p_obj)
+                            if entry.name.lower().endswith(".zip")
+                            else _list_tar_members(p_obj)
                         )
-                        member_plans.append(mp)
+                        member_plans: List[MemberPlan] = []
+                        for m in members:
+                            included = True
+                            if minc or mexc:
+                                included = _want(m, minc, mexc)
 
-                    # Order members if requested (only affects iteration order; doesn't flip included flag)
-                    if mord:
-                        member_plans.sort(
-                            key=lambda mp: (_rank(mp.name, mord), mp.name)
-                        )
+                            try:
+                                sub_reader = get_reader(m)
+                                sr_name = sub_reader.name if sub_reader else None
+                            except Exception:
+                                sr_name = None
 
-                    fp.members = member_plans
+                            mp = MemberPlan(
+                                name=m,
+                                reader_name=sr_name,
+                                included=included and bool(sr_name),
+                            )
+                            member_plans.append(mp)
 
-                files.append(fp)
+                        if mord:
+                            member_plans.sort(
+                                key=lambda mp: (_rank(mp.name, mord), mp.name)
+                            )
+                        fp.members = member_plans
 
-    # Final file ordering
+                    files.append(fp)
+
+        except PermissionError:
+            # os.scandir will raise this if you can't read the directory
+            print(f"Permission denied: {directory}", file=sys.stderr)
+            pass
+
+    # Start the recursion
+    for root in roots:
+        _scan(os.path.expanduser(root))
+
     files.sort(key=lambda x: (_rank(x.path, ordp), x.mtime, x.path))
     return Plan(files=files)
 
@@ -248,9 +297,11 @@ def print_plan(plan: Plan) -> None:
     """Print the ingestion plan to stdout.
 
     Args:
-        plan: Ingestion Plan object.
+        plan: The ingestion plan to print.
     """
-    # ANSI color codes
+    # 1. Initialize Windows console settings before printing anything
+    setup_windows_console()
+
     GREEN = "\033[92m"
     RED = "\033[91m"
     RESET = "\033[0m"
@@ -261,7 +312,6 @@ def print_plan(plan: Plan) -> None:
         sz = f"{fp.size:,}B"
 
         if not fp.is_archive:
-            # Non-archive file: treat as included if it has a reader
             if fp.reader_name:
                 color = GREEN
                 tag = "[✓]"
@@ -278,8 +328,6 @@ def print_plan(plan: Plan) -> None:
             )
 
         else:
-            # Archive: consider it "processable" if it has at least
-            # one included member with a reader
             has_included_member = any(m.included for m in fp.members)
             if has_included_member:
                 arch_color = GREEN
@@ -317,7 +365,7 @@ def print_plan(plan: Plan) -> None:
         should_continue = input("Should I start ingestion? (y/n): ")
         if should_continue.lower() != "y":
             print("Ingestion cancelled by user.")
-            exit(0)
+            sys.exit(0)
         else:
             print("Proceeding with ingestion...")
     else:

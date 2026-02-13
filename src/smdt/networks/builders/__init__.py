@@ -1,3 +1,7 @@
+"""
+Builders for different network types.
+"""
+
 from .user_interaction import UserInteractionNetworkBuilder
 from .entity_cooccurrence import EntityCooccurrenceNetworkBuilder
 from .bipartite import BipartiteNetworkBuilder

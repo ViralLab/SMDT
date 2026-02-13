@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Set, Tuple
+from typing import Any, List, Tuple
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.store.models.communities import Communities, CommunityType
@@ -22,15 +22,34 @@ import ast
 
 @dataclass
 class VoatCoStandardizer(Standardizer):
+    """
+    Standardizer for Voat.co data.
+
+    This class processes records from Voat.co exports, normalizing them into the standard
+    schema models (Communities, Accounts, Posts, Entities, Actions).
+    """
+
     name: str = "voatco_standardizer"
     subverse2ownerid = dict()
 
     def _get_z_count(self, value):
+        """
+        Helper to return null for negative counts, or the value itself if valid.
+        """
         if value and value >= 0:
             return value
         return None
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
+        """
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+           input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+           List[Any]: A list of standardized models (Communities, Accounts, Posts, etc.) derived from the input record.
+        """
         record, src = input_record
         outputs = []
 

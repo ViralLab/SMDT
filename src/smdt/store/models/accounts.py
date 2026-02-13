@@ -37,6 +37,10 @@ class Accounts:
 
     # -------- Validation / normalization --------
     def __post_init__(self):
+        """
+        Validates and standardizes the dataclass fields.
+        Ensures strings are trimmed and numerical counts are non-negative.
+        """
         # Ensure created_at is timezone-aware (UTC if naive)
         ca = self.created_at
         if ca.tzinfo is None or ca.tzinfo.utcoffset(ca) is None:

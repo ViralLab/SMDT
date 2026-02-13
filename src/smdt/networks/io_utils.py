@@ -1,3 +1,7 @@
+"""
+I/O utilities for network data, such as writing edges to Parquet.
+"""
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 

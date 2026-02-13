@@ -5,6 +5,11 @@ from typing import Optional, Mapping, Any, Tuple, List, Dict
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class PostEnrichments:
+    """
+    Python model for `post_enrichments` table.
+    Stores arbitrary JSONB data associated with a post.
+    """
+
     model_id: str = field()
     post_id: str = field()
     body: Dict[str, Any] = field()
@@ -19,6 +24,12 @@ class PostEnrichments:
 
     # -------- Validation / normalization --------
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+
+        Raises:
+            ValueError: If model_id or post_id is empty, or body is not a dict.
+        """
         # model_id required
         if not self.model_id or not self.model_id.strip():
             raise ValueError("model_id is required and cannot be empty")

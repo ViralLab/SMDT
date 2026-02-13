@@ -1,3 +1,7 @@
+"""
+Parquet reader using PyArrow.
+"""
+
 from __future__ import annotations
 
 from typing import Iterable, Mapping, Any, Optional, BinaryIO, Sequence
@@ -37,9 +41,6 @@ class ParquetReader(Reader):
         ext = file_ext(uri).lower()
         return any(ext.endswith(suffix) for suffix in self.SUPPORTED_EXTENSIONS)
 
-    # ------------------------------------------------------------------
-    # Internal helper
-    # ------------------------------------------------------------------
     def _iter_parquet_file(
         self,
         pf: pq.ParquetFile,
@@ -48,20 +49,15 @@ class ParquetReader(Reader):
         batch_size: Optional[int] = None,
     ) -> Iterable[Mapping[str, Any]]:
         """Iterate over rows of a ParquetFile as dictionaries."""
-        # Only pass batch_size if it's an int; PyArrow will choke on None
         if batch_size is not None:
             batch_iter = pf.iter_batches(columns=columns, batch_size=batch_size)
         else:
             batch_iter = pf.iter_batches(columns=columns)
 
         for batch in batch_iter:
-            # each batch.to_pylist() is a list[dict] mapping col -> value
             for row in batch.to_pylist():
                 yield row
 
-    # ------------------------------------------------------------------
-    # Streaming from a path
-    # ------------------------------------------------------------------
     def stream(
         self,
         uri: str,
@@ -96,9 +92,6 @@ class ParquetReader(Reader):
                 batch_size=batch_size,
             )
 
-    # ------------------------------------------------------------------
-    # Streaming from a file-like object (e.g., archive member)
-    # ------------------------------------------------------------------
     def stream_from_filelike(
         self,
         f: BinaryIO,
@@ -126,8 +119,6 @@ class ParquetReader(Reader):
         else:
             batch_size = int(raw_batch_size)
 
-        # If this is a compressed member (e.g., *.parquet.gz inside a tar),
-        # let maybe_decompress handle it. Otherwise, use the raw file-like.
         f_dec: BinaryIO = maybe_decompress(f, member_name) if member_name else f
 
         pf = pq.ParquetFile(f_dec)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, List, Mapping, Optional, Set
+from typing import Any, List, Mapping, Optional, Set, Tuple
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.standardizers.utils import (
@@ -21,6 +21,9 @@ from smdt.store.models import (
 
 
 def _point_ewkt(geo: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """
+    Parses a geospatial dictionary into a POINT EWKT string (SRID 4326).
+    """
     if not geo:
         return None
     coords = geo.get("coordinates") or {}
@@ -33,6 +36,9 @@ def _point_ewkt(geo: Optional[Mapping[str, Any]]) -> Optional[str]:
 
 
 def map2int(value: Any) -> Optional[int]:
+    """
+    Safely converts a value to an integer, returning None on failure.
+    """
     try:
         return int(value)
     except (ValueError, TypeError):
@@ -41,12 +47,23 @@ def map2int(value: Any) -> Optional[int]:
 
 @dataclass
 class TwitterV1Standardizer(Standardizer):
+    """
+    Standardizer for Twitter API v1.1 data.
+
+    This class processes records from Twitter API v1 exports, normalizing them into the standard
+    schema models (Accounts, Posts, Entities, Actions). It handles recursive structures like
+    retweeted_status and quoted_status.
+    """
+
     name: str = "twitter_v1"
 
     _DATE_FMT = "%a %b %d %H:%M:%S %z %Y"
 
     @staticmethod
     def _parse_dt(s: Optional[str]) -> Optional[datetime]:
+        """
+        Parses a Twitter timestamp string into a timezone-agnostic UTC datetime.
+        """
         if not s:
             return None
         try:
@@ -58,6 +75,9 @@ class TwitterV1Standardizer(Standardizer):
     def _extract_accounts(
         self, record: Mapping[str, Any], accounts: Set[Accounts], retrieved_at: datetime
     ) -> None:
+        """
+        Recursively extracts user accounts from the record and its nested status objects.
+        """
         user = record.get("user")
         if user:
             created_at = self._parse_dt(user.get("created_at"))
@@ -83,20 +103,15 @@ class TwitterV1Standardizer(Standardizer):
         if "quoted_status" in record:
             self._extract_accounts(record["quoted_status"], accounts, retrieved_at)
 
-    # def _get_engagement_count(self, record: Mapping[str, Any]) -> Optional[int]:
-    #     total = 0
-    #     for key in ("retweet_count", "reply_count", "quote_count", "favorite_count"):
-    #         val = record.get(key)
-    #         if isinstance(val, int) and val >= 0:
-    #             total += val
-    #     return total if total > 0 else None
-
     def _extract_posts_and_text_entities(
         self,
         record: Mapping[str, Any],
         posts_and_entities: Set[Posts],
         retrieved_at: datetime,
     ) -> None:
+        """
+        Recursively extracts posts and entities found in the text (emails, hashtags, etc.).
+        """
         body = None
         if record.get("truncated"):
             if record["truncated"]:
@@ -190,6 +205,9 @@ class TwitterV1Standardizer(Standardizer):
     def _extract_actions(
         self, record: Mapping[str, Any], actions: Set[Actions], retrieved_at: datetime
     ) -> None:
+        """
+        Recursively extracts actions (shares/retweets, comments/replies) from the record.
+        """
         if record.get("in_reply_to_status_id_str"):
             if record.get("created_at"):
                 actions.add(
@@ -387,13 +405,18 @@ class TwitterV1Standardizer(Standardizer):
             )
 
     # --------- main API ---------
-    def standardize(self, input_record) -> List[Any]:
+    def standardize(
+        self, input_record: Tuple[Mapping[str, Any], SourceInfo]
+    ) -> List[Any]:
         """
-        Accept a single Twitter v1 tweet object (possibly with nested retweet/quote trees)
-        and yield Accounts, Posts, Actions, Entities built from it.
+        Standardizes a single input record into a list of schema models.
+        Accepts a single Twitter v1 tweet object (possibly with nested retweet/quote trees).
+
+        Args:
+            input_record (Tuple[Mapping[str, Any], SourceInfo]): A tuple containing the raw record and source information.
 
         Returns:
-            A list of standardized entities.
+            List[Any]: A list of standardized models (Accounts, Posts, Actions, Entities) derived from the input record.
         """
         record, src = input_record
         # Not available in v1 tweets; use current time

@@ -12,6 +12,10 @@ except ImportError:
 
 
 class EntityType(StrEnum):
+    """
+    Enumeration of entity types extracted from content.
+    """
+
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
     LINK = "LINK"
@@ -22,6 +26,11 @@ class EntityType(StrEnum):
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class Entities:
+    """
+    Python model for `entities` table.
+    Represents media, links, or other entities extracted from posts or profiles.
+    """
+
     created_at: datetime = field()
     entity_type: Union[str, EntityType] = field()
 
@@ -37,6 +46,10 @@ class Entities:
     __jsonb_fields__ = set()  # no JSONB columns here
 
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+        Ensures entity_type is valid and strings are normalized.
+        """
         # entity_type: accept str or Enum; normalize to Enum (uppercased for safety)
         et = self.entity_type
         if isinstance(et, str):

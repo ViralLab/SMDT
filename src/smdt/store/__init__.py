@@ -1,4 +1,6 @@
 from .models import (
+    Communities,
+    CommunityType,
     Accounts,
     Posts,
     Entities,
@@ -11,6 +13,8 @@ from .models import (
 from .standard_db import StandardDB
 
 __all__ = [
+    "Communities",
+    "CommunityType",
     "Accounts",
     "Posts",
     "Entities",

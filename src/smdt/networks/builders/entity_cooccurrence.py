@@ -1,3 +1,7 @@
+"""
+Builder for entity co-occurrence networks (e.g. hashtags appearing in the same post).
+"""
+
 from typing import Any, Dict, Tuple
 
 import pandas as pd

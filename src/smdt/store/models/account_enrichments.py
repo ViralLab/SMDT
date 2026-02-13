@@ -5,6 +5,11 @@ from typing import Optional, Mapping, Any, Tuple, List, Dict
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class AccountEnrichments:
+    """
+    Python model for `account_enrichments` table.
+    Stores arbitrary JSONB data associated with an account.
+    """
+
     # Required fields first
     model_id: str = field()
     account_id: str = field()
@@ -21,6 +26,12 @@ class AccountEnrichments:
 
     # -------- Validation / normalization --------
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+
+        Raises:
+            ValueError: If model_id or account_id is empty, or body is not a dict.
+        """
         # model_id required and trimmed
         if not self.model_id or not self.model_id.strip():
             raise ValueError("model_id is required and cannot be empty")

@@ -1,3 +1,5 @@
+"""Pseudonymization utility."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
@@ -40,7 +42,7 @@ class Pseudonymizer:
     output_hex_len: int = 64
     normalizer: Optional[Callable[[str], str]] = None
 
-    def _h(self):
+    def _get_hash_function(self):
         """Get the hash function for the configured algorithm.
 
         Returns:
@@ -61,8 +63,7 @@ class Pseudonymizer:
                 raise RuntimeError(
                     "Whirlpool selected but whirlpool-hash is not installed."
                 )
-            # whirlpool.new(data, key=None) → we emulate HMAC below
-            return None  # special case
+            return None
         raise ValueError(f"Unsupported algo: {self.algo}")
 
     def _normalize(self, s: str) -> str:
@@ -94,7 +95,7 @@ class Pseudonymizer:
         data = self._normalize(msg).encode("utf-8", errors="surrogatepass")
         # Simple HMAC-like: hash( pepper || 0x00 || data || 0xFF ) then hash again
         # to mix and expand. This is sufficient for pseudonymization.
-        hfn = self._h()
+        hfn = self._get_hash_function()
         if self.algo == Algorithm.WHIRLPOOL:
             d1 = whirlpool.new(self.pepper + b"\x00" + data + b"\xff").digest()
             d2 = whirlpool.new(self.pepper + b"\x01" + d1 + b"\xee").hexdigest()

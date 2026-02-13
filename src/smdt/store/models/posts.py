@@ -65,6 +65,10 @@ class Posts:
 
     # -------- Validation / normalization --------
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+        Ensures strings are normalized and counts are non-negative.
+        """
         # account_id required, non-empty
         if not isinstance(self.account_id, str) or not self.account_id.strip():
             raise ValueError("account_id is required and cannot be empty")
