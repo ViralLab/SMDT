@@ -3,8 +3,7 @@
 layout: home
 
 hero:
-  name: '<span id="hero-typewriter" style="opacity:0">Social Media Data Toolkit</span><span class="cursor">|</span>'
-  text: 'SMDT'
+  name: 'SMDT: <span id="hero-typewriter" style="opacity:0">Social Media Data Toolkit</span><span class="cursor">|</span>'
   actions:
     - theme: brand
       text: API Reference

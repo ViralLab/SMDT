@@ -157,5 +157,20 @@
 
 /* Ensure typewriter target behaves like the gradient text */
 #hero-typewriter {
-  white-space: normal; /* Ensure wrapping if long, though simple usage usually no wrap */
+  white-space: nowrap; 
+}
+
+/* Force hero name to stay on one line on desktop */
+@media (min-width: 960px) {
+  .VPHomeHero .name {
+    white-space: nowrap !important;
+    max-width: none !important;
+  }
+}
+/* Reduce font size slightly on smaller desktops if needed */
+@media (min-width: 640px) and (max-width: 1200px) {
+  .VPHomeHero .name {
+    font-size: 48px !important;
+    line-height: 1.2 !important;
+  }
 }
