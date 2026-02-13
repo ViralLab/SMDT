@@ -90,6 +90,8 @@ class PipelineConfig:
     reader_kwargs: Dict[str, Dict[str, Any]] | None = None
     on_conflict: Dict[Type, str] | None = None
     progress: ProgressCallback | None = None
+    checkpoint_file: str | None = None
+    reset_checkpoint: bool | None = False
 
     # if False, use multiprocessing over files
     do_sequential: bool = False
@@ -331,6 +333,50 @@ def run_pipeline(
     cfg = config or PipelineConfig()
     on_conflict = dict(cfg.on_conflict or {})
 
+    # Checkpoint Handling
+    completed_files: set[str] = set()
+    checkpoint_file_path: Path | None = None
+    
+    if cfg.checkpoint_file:
+        checkpoint_file_path = Path(cfg.checkpoint_file)
+
+        if cfg.reset_checkpoint and checkpoint_file_path.exists():
+            log.info("Resetting checkpoint file: %s", checkpoint_file_path)
+            # Create a backup just in case
+            if checkpoint_file_path.stat().st_size > 0:
+                backup = checkpoint_file_path.with_suffix(".bak")
+                import shutil
+                shutil.copy2(checkpoint_file_path, backup)
+                log.info("Backed up old checkpoint to %s", backup)
+            
+            # Now wipe the file
+            open(checkpoint_file_path, "w").close()
+
+        if checkpoint_file_path.exists():
+            with checkpoint_file_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        completed_files.add(line.strip())
+            log.info(
+                "Loaded %d completed files from checkpoint %s",
+                len(completed_files),
+                checkpoint_file_path,
+            )
+
+    files_to_process = [fp for fp in plan.files if str(fp.path) not in completed_files]
+    
+    if len(files_to_process) < len(plan.files):
+        log.info(
+            "Skipping %d files already in checkpoint. Remaining: %d",
+            len(plan.files) - len(files_to_process),
+            len(files_to_process),
+        )
+
+    def _mark_file_completed(path: str) -> None:
+        if checkpoint_file_path:
+            with checkpoint_file_path.open("a", encoding="utf-8") as f:
+                f.write(f"{path}\n")
+
     buffers: DefaultDict[Type, List[DBModel]] = defaultdict(list)
     counters: Counter[str] = Counter()
     failures_by_class: Counter[str] = Counter()
@@ -452,7 +498,7 @@ def run_pipeline(
     # ------------------------------- main loop -------------------------------
     if cfg.do_sequential == True:
         try:
-            for fp in tqdm.tqdm(plan.files, desc="Pipeline files", colour="red"):
+            for fp in tqdm.tqdm(files_to_process, desc="Pipeline files", colour="red"):
                 t0_file = perf_counter()
                 _notify("file_start", path=fp.path)
                 log.info("Processing file %s", fp.path)
@@ -495,6 +541,9 @@ def run_pipeline(
                     counters["files"] += 1
                     counters["records"] += file_records
                     counters["models"] += file_models
+                    
+                    # If we finished the file loop without a top-level crash, mark it
+                    _mark_file_completed(fp.path)
 
                 except Exception as e:
                     # Catch any unhandled per-file error so we still emit file_end
@@ -576,7 +625,7 @@ def run_pipeline(
                 db,  # pass the parent db (for db.connect())
                 standardizer,
             )
-            for fp in plan.files
+            for fp in files_to_process
         ]
 
         try:
@@ -589,6 +638,8 @@ def run_pipeline(
                 ):
                     for k, v in counters_delta.items():
                         counters[k] += v
+
+                    _mark_file_completed(path)
 
                     _notify(
                         "file_end",
