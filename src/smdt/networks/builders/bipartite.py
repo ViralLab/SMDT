@@ -1,3 +1,7 @@
+"""
+Builder for bipartite networks (e.g. account-entity, post-entity).
+"""
+
 from typing import Any, Dict, Tuple
 import pandas as pd
 
@@ -54,9 +58,7 @@ class BipartiteNetworkBuilder(NetworkBuilder):
         if end_time is not None:
             time_clause += " AND p.created_at < %(end_time)s"
 
-        # ------------------------------------------------------
         # CASE 1: account–entity (most common)
-        # ------------------------------------------------------
         if left == "account":
             sql = f"""
             SELECT
@@ -72,9 +74,7 @@ class BipartiteNetworkBuilder(NetworkBuilder):
             """
             params: Dict[str, Any] = {"entity_type": entity_type}
 
-        # ------------------------------------------------------
         # CASE 2: post–entity
-        # ------------------------------------------------------
         elif left == "post":
             sql = f"""
             SELECT

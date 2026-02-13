@@ -1,3 +1,7 @@
+"""
+Utilities for converting network results to other formats (e.g., NetworkX).
+"""
+
 import pandas as pd
 import networkx as nx
 

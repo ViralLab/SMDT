@@ -1,3 +1,10 @@
+"""
+Base classes for network builders.
+
+This module defines the abstract base class `NetworkBuilder` which all specific
+network builders (user interaction, etc.) must inherit from.
+"""
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Tuple
 

@@ -1,3 +1,10 @@
+"""
+API for building various types of networks (user interaction, entity co-occurrence, etc.).
+
+This module provides high-level functions to create and stream network edges
+for different types of relationships found in the data.
+"""
+
 from datetime import datetime, timedelta
 from typing import Literal, Optional, Iterator, Dict, Any, Tuple, List
 import pandas as pd
@@ -13,18 +20,13 @@ from .builders import (
     CoActionNetworkBuilder,
 )
 
-# ---------------------------------------------------------------------
-# Shared configuration
-# ---------------------------------------------------------------------
+
 Weighting = Literal["binary", "count"]
 
 _ALLOWED_INTERACTIONS = {"QUOTE", "SHARE", "COMMENT", "FOLLOW", "BLOCK"}
 _ALLOWED_ENTITY_TYPES = {"HASHTAG", "USER_TAG", "LINK", "EMAIL", "IMAGE", "VIDEO"}
 
 
-# ---------------------------------------------------------------------
-# USER INTERACTION NETWORKS
-# ---------------------------------------------------------------------
 def user_interaction(
     db: StandardDB,
     *,
@@ -133,9 +135,6 @@ def iter_user_interaction_edges(
     return iter_edge_chunks(builder, chunksize=chunksize)
 
 
-# ---------------------------------------------------------------------
-# ENTITY COOCCURRENCE NETWORKS
-# ---------------------------------------------------------------------
 def entity_cooccurrence(
     db: StandardDB,
     *,
@@ -192,9 +191,6 @@ def entity_cooccurrence(
     return result
 
 
-# ---------------------------------------------------------------------
-# BIPARTITE NETWORKS
-# ---------------------------------------------------------------------
 def bipartite(
     db: StandardDB,
     *,
@@ -379,11 +375,6 @@ def iter_coaction_edges(
     return iter_edge_chunks(builder, chunksize=chunksize)
 
 
-# -------------------------------------------------------------------
-# Internal helper: iterate fixed-size time windows
-# -------------------------------------------------------------------
-
-
 def _iter_time_windows(
     start_time: datetime,
     end_time: datetime,
@@ -408,11 +399,6 @@ def _iter_time_windows(
         nxt = min(current + step, end_time)
         yield current, nxt
         current = nxt
-
-
-# -------------------------------------------------------------------
-# Temporal variants: networks over time windows
-# -------------------------------------------------------------------
 
 
 def user_interaction_over_time(

@@ -1,3 +1,7 @@
+"""
+Builder for user interaction networks (e.g. follows, mentions, relies).
+"""
+
 from typing import Any, Dict, LiteralString, Tuple
 import pandas as pd
 
@@ -8,7 +12,7 @@ class UserInteractionNetworkBuilder(NetworkBuilder):
     """
     Build user–user interaction networks based on the Actions table.
 
-    Edge: originator_account_id → target_account_id
+    Edge: originator_account_id -> target_account_id
     Weight: number of occurrences of a given action_type.
 
     Supported action types (case-insensitive):
