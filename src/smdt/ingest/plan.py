@@ -39,6 +39,13 @@ def setup_windows_console():
 
 @dataclass
 class MemberPlan:
+    """Plan for a single member within an archive.
+
+    Attributes:
+        name: Name of the member.
+        reader_name: Name of the reader to use.
+        included: Whether the member is included in the plan.
+    """
     name: str
     reader_name: Optional[str]
     included: bool
@@ -46,6 +53,16 @@ class MemberPlan:
 
 @dataclass
 class FilePlan:
+    """Plan for a single file.
+
+    Attributes:
+        path: Path to the file.
+        size: Size of the file in bytes.
+        mtime: Modification time of the file.
+        reader_name: Name of the reader to use.
+        is_archive: Whether the file is an archive.
+        members: List of members if the file is an archive.
+    """
     path: str
     size: int
     mtime: float
@@ -60,6 +77,11 @@ class FilePlan:
 
 @dataclass
 class Plan:
+    """Ingestion plan containing files to process.
+
+    Attributes:
+        files: List of file plans.
+    """
     files: List[FilePlan]
 
     def summary(self) -> Dict[str, int]:
@@ -78,6 +100,16 @@ class Plan:
 def _want(
     name: str, include: Optional[Tuple[str, ...]], exclude: Optional[Tuple[str, ...]]
 ) -> bool:
+    """Check if a file name matches the inclusion/exclusion patterns.
+
+    Args:
+        name: File name to check.
+        include: Patterns to include.
+        exclude: Patterns to exclude.
+
+    Returns:
+        True if the file should be included, False otherwise.
+    """
     if include:
         if not any(fnmatch(name, pat) for pat in include):
             return False
@@ -88,6 +120,14 @@ def _want(
 
 
 def _list_zip_members(p: Path) -> List[str]:
+    """List members of a zip archive.
+
+    Args:
+        p: Path to the zip archive.
+
+    Returns:
+        List of member names.
+    """
     try:
         with zipfile.ZipFile(p, "r") as zf:
             return [i.filename for i in zf.infolist() if not i.is_dir()]
@@ -96,6 +136,14 @@ def _list_zip_members(p: Path) -> List[str]:
 
 
 def _list_tar_members(p: Path) -> List[str]:
+    """List members of a tar archive.
+
+    Args:
+        p: Path to the tar archive.
+
+    Returns:
+        List of member names.
+    """
     try:
         with tarfile.open(p, "r:*") as tf:
             return [m.name for m in tf.getmembers() if m.isfile()]
@@ -104,6 +152,15 @@ def _list_tar_members(p: Path) -> List[str]:
 
 
 def _rank(name: str, patterns: Optional[Tuple[str, ...]]) -> int:
+    """Rank a file name based on patterns.
+
+    Args:
+        name: File name to rank.
+        patterns: Patterns to rank by.
+
+    Returns:
+        Rank index (lower is better), or a large number if not matched.
+    """
     if not patterns:
         return 10**9
     for i, pat in enumerate(patterns):
@@ -122,6 +179,20 @@ def plan_directories(
     member_include: Optional[Iterable[str]] = None,
     member_exclude: Optional[Iterable[str]] = None,
 ) -> Plan:
+    """Create an ingestion plan by scanning directories.
+
+    Args:
+        roots: Root directories to scan.
+        include: Patterns to include.
+        exclude: Patterns to exclude.
+        order: Patterns to order files by.
+        member_order: Patterns to order archive members by.
+        member_include: Patterns to include archive members by.
+        member_exclude: Patterns to exclude archive members by.
+
+    Returns:
+        Ingestion plan.
+    """
     inc = tuple(include) if include else None
     exc = tuple(exclude) if exclude else None
     ordp = tuple(order) if order else None
@@ -132,6 +203,11 @@ def plan_directories(
     files: List[FilePlan] = []
 
     def _scan(directory: str):
+        """Recursively scan a directory for files.
+
+        Args:
+            directory: Directory to scan.
+        """
         try:
             with os.scandir(directory) as it:
                 for entry in it:
@@ -215,6 +291,11 @@ def plan_directories(
 
 
 def print_plan(plan: Plan) -> None:
+    """Print the ingestion plan to stdout.
+
+    Args:
+        plan: The ingestion plan to print.
+    """
     # 1. Initialize Windows console settings before printing anything
     setup_windows_console()
 

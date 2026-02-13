@@ -83,7 +83,7 @@ class PipelineConfig:
         reset_checkpoint: If True, reset the checkpoint file at the start of the run.
     """
 
-    batch_size: int = 1_000  # records → standardizer batch size
+    batch_size: int = 1_000  # records -> standardizer batch size
     chunk_size: int = 100_000  # values fallback chunk size for DB
     reader_kwargs: Dict[str, Dict[str, Any]] | None = None
     on_conflict: Dict[Type, str] | None = None
@@ -210,6 +210,12 @@ def _process_file_worker_with_db(
     counters = Counter()
 
     def _flush_buffer_worker(model_cls: Type, items: List[DBModel]) -> None:
+        """Flush a buffer of models to the database.
+
+        Args:
+            model_cls: The class of the models to flush.
+            items: List of model instances to insert.
+        """
         if not items:
             return
 
@@ -248,6 +254,11 @@ def _process_file_worker_with_db(
             items.clear()
 
     def _add_models_to_buffers_local(models: Iterable[DBModel]) -> None:
+        """Add models to local buffers and trigger flush if full.
+
+        Args:
+            models: Iterable of models to add.
+        """
         for model in models:
             cls = type(model)
             buffers[cls].append(model)
@@ -255,7 +266,6 @@ def _process_file_worker_with_db(
             counters["models"] += 1
             if len(buffers[cls]) >= batch_size:
                 _flush_buffer_worker(cls, buffers[cls])
-            # print(len(buffers[cls]))
 
     try:
         rec_iter = _iter_file_records_global(fp, hints, reader_kwargs_cfg)
@@ -366,6 +376,11 @@ def run_pipeline(
         )
 
     def _mark_file_completed(path: str) -> None:
+        """Mark a file as completed in the checkpoint file.
+
+        Args:
+            path: Path of the completed file.
+        """
         if checkpoint_file_path:
             with checkpoint_file_path.open("a", encoding="utf-8") as f:
                 f.write(f"{path}\n")
@@ -378,16 +393,39 @@ def run_pipeline(
     # ---------------- helpers ----------------
 
     def _notify(event: str, **info: Any) -> None:
+        """Call the progress callback if configured.
+
+        Args:
+            event: Name of the event.
+            info: Additional information about the event.
+        """
         if cfg.progress:
             cfg.progress(event, info)
 
     def _normalize_ext(path: str) -> str:
+        """Normalize file extension.
+
+        Args:
+            path: File path.
+
+        Returns:
+            Normalized extension string.
+        """
         suffixes = [s.lower() for s in Path(path).suffixes]
         while suffixes and suffixes[-1] in COMPRESSED_SUFFIXES:
             suffixes.pop()
         return suffixes[-1].lstrip(".") if suffixes else ""
 
     def _reader_kwargs_for(path: str, reader_name: Optional[str]) -> Dict[str, Any]:
+        """Get reader keyword arguments for a file.
+
+        Args:
+            path: File path.
+            reader_name: Optional reader name.
+
+        Returns:
+            Dictionary of reader keyword arguments.
+        """
         merged: Dict[str, Any] = {}
         ext = _normalize_ext(path)
         if ext in DEFAULT_READER_KW:
@@ -466,12 +504,21 @@ def run_pipeline(
             items.clear()
 
     def _flush_all_buffers() -> None:
+        """Flush all model buffers."""
         for cls_, items in list(buffers.items()):
             _flush_buffer(cls_, items)
 
     # ---------------- record iteration (files & archives) ----------------
 
     def _iter_file_records(fp):
+        """Iterate over records in a file (handling archives).
+
+        Args:
+            fp: File plan object.
+
+        Yields:
+            Tuple of (record, source_info).
+        """
         if not fp.is_archive:
             src = SourceInfo(path=fp.path, member=None, hints=hints)
             rk = _reader_kwargs_for(fp.path, fp.reader_name)
