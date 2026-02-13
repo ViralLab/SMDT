@@ -1,3 +1,5 @@
+"""Main anonymization module."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Dict, Any, Optional, Tuple, List
@@ -15,10 +17,10 @@ import logging, sys
 log = logging.getLogger(__name__)
 
 logging.basicConfig(
-    level=logging.DEBUG,  # or DEBUG to see fetches
+    level=logging.DEBUG,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
-    force=True,  # important if something configured logging earlier
+    force=True,
 )
 
 
@@ -45,13 +47,11 @@ class AnonymizeConfig:
     pepper: bytes
     algorithm: Algorithm = Algorithm.SHA256
     output_hex_len: int = 64
-    # Where to find the anon schema inside the package. Users don't pass file paths.
     schema_package: str = "smdt.store.schemas"
     schema_resource: str = "anon_std_schema.sql"
-    # Optional range filters to split work
-    time_window: Optional[Tuple[str, str]] = None  # ISO strings for created_at
+    time_window: Optional[Tuple[str, str]] = None
     chunk_rows: int = 1_000
-    owner_schema: Optional[str] = None  # if you use per-db schemas
+    owner_schema: Optional[str] = None
     ask_reinit: bool = True
 
 
@@ -81,9 +81,7 @@ class Anonymizer:
             normalizer=lambda s: s.strip(),
         )
 
-        domain_mapper = lambda host: host  # keep domains plain
-        # or (lambda host: self.pseudo.make(host) or "") to hash
-
+        domain_mapper = lambda host: host
         self.redactor = Redactor(
             handle_mapper=lambda h: self.pseudo.make(h) or "",
             map_host=domain_mapper,
@@ -186,9 +184,9 @@ class Anonymizer:
                     "Destination schema detected; proceeding without reinit "
                     "(non-interactive or ask_reinit=False)."
                 )
-            return  # ← only one return here
+            return
 
-        # Not initialized -> apply schema
+        # Not initialized apply schema
         with _res.as_file(
             _res.files(self.cfg.schema_package) / self.cfg.schema_resource
         ) as p:
@@ -206,7 +204,7 @@ class Anonymizer:
         """
         conn = self.src.connect()
         try:
-            with conn.cursor(row_factory=dict_row) as cur:  # psycopg3 row→dict
+            with conn.cursor(row_factory=dict_row) as cur:
                 where = ""
                 params: List[Any] = []
                 if self.cfg.time_window and self._has_col(table, "created_at"):
@@ -396,6 +394,7 @@ class Anonymizer:
 
     def _reinit_destination_schema(self) -> None:
         """Drop known tables/policies in the current schema and start fresh.
+
         Uses owner_schema if provided to reset the whole schema, else drops tables one by one.
         """
         # If an owner schema is configured in DBConfig, prefer StandardDB.reset_schema()
@@ -405,9 +404,8 @@ class Anonymizer:
                 self.dst.reset_schema()  # may require cfg.owner to be set in DBConfig
                 return
             except Exception:
-                pass  # fall back to manual drop below
+                pass
 
-        # Manual drop of known tables in the current schema
         tables = [
             "account_enrichments",
             "post_enrichments",
