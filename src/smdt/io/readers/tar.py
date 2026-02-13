@@ -1,3 +1,7 @@
+"""
+Tar archive reader.
+"""
+
 from __future__ import annotations
 import tarfile
 from fnmatch import fnmatch
@@ -56,7 +60,6 @@ class TarReader(Reader):
         exclude = tuple(kwargs.get("exclude", ())) or None
         member_filter = kwargs.get("member_filter", self.member_filter)
 
-        # Don’t leak archive-only kwargs to child readers
         child_kwargs = {
             k: v
             for k, v in kwargs.items()
@@ -84,9 +87,7 @@ class TarReader(Reader):
                 if fobj is None:
                     continue
 
-                # Single handoff point: reader selection + filelike vs tempfile fallback.
-                # Ensures nested compression (e.g., *.csv.gz inside tar) is handled via member_name.
-                with fobj:
+                    # Single handoff point: reader selection + filelike vs tempfile fallback.
                     yield from read_from_filelike(
                         fobj, member_name=mname, **child_kwargs
                     )

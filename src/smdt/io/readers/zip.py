@@ -1,4 +1,7 @@
-# smdt/io/readers/zip.py
+"""
+Zip archive reader.
+"""
+
 from __future__ import annotations
 
 import zipfile
@@ -58,7 +61,6 @@ class ZipReader(Reader):
         exclude = tuple(kwargs.get("exclude", ())) or None
         member_filter = kwargs.get("member_filter", self.member_filter)
 
-        # Don't leak archive-only kwargs to child readers
         child_kwargs = {
             k: v
             for k, v in kwargs.items()

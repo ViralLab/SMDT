@@ -1,3 +1,7 @@
+"""
+Pandas-based CSV reader.
+"""
+
 from __future__ import annotations
 from typing import Iterable, Mapping, Any, Optional, BinaryIO
 import inspect
@@ -101,7 +105,6 @@ class PandasCsvReader(Reader):
         f_dec = maybe_decompress(f, member_name) if member_name else f
         return self._stream_from_filelike(f_dec, member_name=member_name, **kwargs)
 
-    # ---------- core ----------
     def _stream_from_filelike(
         self, f: BinaryIO, *, member_name: Optional[str], **kwargs: Any
     ) -> Iterable[Mapping[str, Any]]:

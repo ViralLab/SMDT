@@ -1,3 +1,7 @@
+"""
+JSONL (Line-delimited JSON) reader.
+"""
+
 from __future__ import annotations
 import io
 import orjson
@@ -62,7 +66,6 @@ class JsonlReader(Reader):
             yield first
         yield from text_fh  # preserves streaming
 
-    # ---- path-based ----
     def stream(self, uri: str, **kwargs) -> Iterable[Mapping[str, Any]]:
         """Stream records from a JSONL file.
 
@@ -93,7 +96,6 @@ class JsonlReader(Reader):
             finally:
                 f.close()
 
-    # ---- file-like (archive member) ----
     def stream_from_filelike(
         self, f: BinaryIO, **kwargs
     ) -> Iterable[Mapping[str, Any]]:

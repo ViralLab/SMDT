@@ -1,3 +1,7 @@
+"""
+JSON reader.
+"""
+
 from __future__ import annotations
 import io
 import json_repair
@@ -22,8 +26,6 @@ class JsonReader(Reader):
 
     name = "json"
 
-    # -------------------- detection --------------------
-
     def supports(self, uri: str, *, content_type: Optional[str] = None) -> bool:
         """Check if the reader supports the given URI.
 
@@ -38,8 +40,6 @@ class JsonReader(Reader):
         """
         ext = file_ext(uri)
         return ext.endswith((".json", ".json.gz", ".json.bz2", ".json.xz", ".json.zst"))
-
-    # -------------------- path-based --------------------
 
     def stream(self, uri: str, **kwargs) -> Iterable[Mapping[str, Any]]:
         """Stream records from a JSON file.
@@ -68,8 +68,6 @@ class JsonReader(Reader):
             except Exception:
                 pass
 
-    # -------------------- file-like --------------------
-
     def stream_from_filelike(
         self, f: BinaryIO, **kwargs
     ) -> Iterable[Mapping[str, Any]]:
@@ -97,13 +95,9 @@ class JsonReader(Reader):
         else:
             yield from self._load_entire_doc(f_dec)
 
-    # -------------------- internals --------------------
-
     def _load_entire_doc(self, bin_f: BinaryIO) -> Iterable[Mapping[str, Any]]:
         """Load full JSON document (via json_repair) and yield items.
-
-        Yields:
-            - each item if top-level list
+        - each item if top-level list
             - the object itself if dict
 
         Args:

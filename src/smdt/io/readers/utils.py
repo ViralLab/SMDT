@@ -1,4 +1,7 @@
-# utils.py
+"""
+IO utilities.
+"""
+
 from __future__ import annotations
 from typing import IO, Optional
 from pathlib import Path
@@ -6,9 +9,9 @@ import io
 import gzip, bz2, lzma
 
 try:
-    import zstandard as zstd  # optional
-except Exception:  # pragma: no cover
-    zstd = None  # type: ignore
+    import zstandard as zstd
+except Exception:
+    zstd = None
 
 
 def file_ext(uri: str) -> str:
