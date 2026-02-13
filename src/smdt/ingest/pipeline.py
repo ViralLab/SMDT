@@ -571,9 +571,7 @@ def run_pipeline(
                                 _flush_buffer(cls, buffers[cls])
                     except Exception as e:
                         counters["record_errors"] += 1
-                        log.warning(
-                            "Error in standardize: %s", e, exc_info=True
-                        )
+                        log.warning("Error in standardize: %s", e, exc_info=True)
                     file_records += 1
 
                 # per-file counters aggregation (common to both branches)

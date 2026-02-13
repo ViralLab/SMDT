@@ -46,6 +46,7 @@ class MemberPlan:
         reader_name: Name of the reader to use.
         included: Whether the member is included in the plan.
     """
+
     name: str
     reader_name: Optional[str]
     included: bool
@@ -63,6 +64,7 @@ class FilePlan:
         is_archive: Whether the file is an archive.
         members: List of members if the file is an archive.
     """
+
     path: str
     size: int
     mtime: float
@@ -82,6 +84,7 @@ class Plan:
     Attributes:
         files: List of file plans.
     """
+
     files: List[FilePlan]
 
     def summary(self) -> Dict[str, int]:
