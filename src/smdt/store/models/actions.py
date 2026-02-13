@@ -12,6 +12,10 @@ except ImportError:
 
 
 class ActionType(StrEnum):
+    """
+    Enumeration of supported action types.
+    """
+
     UPVOTE = "UPVOTE"
     DOWNVOTE = "DOWNVOTE"
     SHARE = "SHARE"
@@ -25,6 +29,11 @@ class ActionType(StrEnum):
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class Actions:
+    """
+    Python model for `actions` table.
+    Represents an interaction between accounts, posts, or communities.
+    """
+
     created_at: datetime = field()
     action_type: Union[str, ActionType] = field()
 
@@ -43,6 +52,10 @@ class Actions:
 
     # -------- Validation --------
     def __post_init__(self):
+        """
+        Validates the dataclass fields.
+        Ensures action_type is valid and strings are normalized.
+        """
         # Normalize action_type
         at = self.action_type
         if isinstance(at, str):
@@ -73,6 +86,9 @@ class Actions:
     # -------- DB helpers --------
     @staticmethod
     def insert_columns(include_id: bool = False) -> Tuple[str, ...]:
+        """
+        Ordered column list for INSERT statements.
+        """
         cols = (
             "originator_account_id",
             "originator_post_id",
@@ -87,6 +103,9 @@ class Actions:
         return ("id",) + cols if include_id else cols
 
     def insert_values(self, include_id: bool = False) -> Tuple[Any, ...]:
+        """
+        Values tuple aligned with insert_columns().
+        """
         at_str = (
             self.action_type.value
             if isinstance(self.action_type, ActionType)
@@ -107,6 +126,9 @@ class Actions:
 
     @classmethod
     def from_db_row(cls, row: Mapping[str, Any]) -> "Actions":
+        """
+        Hydrate from a dict-like DB row.
+        """
         return cls(
             created_at=row["created_at"],  # NOT NULL
             action_type=row["action_type"],  # NOT NULL
@@ -124,4 +146,7 @@ class Actions:
     def make_bulk_params(
         items: List["Actions"], include_id: bool = False
     ) -> List[Tuple[Any, ...]]:
+        """
+        Convert a list of Actions to INSERT parameter tuples.
+        """
         return [a.insert_values(include_id=include_id) for a in items]

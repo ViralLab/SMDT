@@ -1,3 +1,7 @@
+"""
+This module contains the data models for the SMDT store.
+"""
+
 try:
     from enum import StrEnum  # Python 3.11+
 except ImportError:
