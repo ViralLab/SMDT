@@ -2,56 +2,70 @@ name: Build & Deploy Docs
 
 on:
   push:
-    branches: [main]
-    # Only run when docs are affected (optional)
-    # paths:
-    #   - 'src/**/*.py'
-    #   - 'site/**'
-    #   - 'pydoc-markdown.yml'
+    branches: [main, master]
   workflow_dispatch:
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
-  contents: write # needed for gh-pages push
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  docs:
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Not needed if lastUpdated is not enabled
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install pydoc-markdown
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pydoc-markdown
-
-      - name: Generate API Markdown from docstrings
-        run: |
-          pydoc-markdown
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: site/package-lock.json
 
-      - name: Install deps & build VitePress
-        working-directory: site
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Generate API Docs
+        # running commands manually to avoid 'uvx' dependency in npm script
         run: |
-          npm ci || npm i
-          npx vitepress build
+          pydoc-markdown
+          node scripts/split-api.mjs
 
-      - name: Deploy to GitHub Pages (gh-pages)
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Build VitePress site
+        run: npx vitepress build site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: site/.vitepress/dist
-          # If you use a custom domain, add:
-          # cname: docs.example.com
+          path: site/.vitepress/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
