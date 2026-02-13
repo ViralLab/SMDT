@@ -8,6 +8,7 @@ export default defineConfig({
   appearance: 'dark',
   lastUpdated: true,
   cleanUrls: true,
+  ignoreDeadLinks: true,
   markdown: {
     html: true,
     headers: { level: [2, 3, 4] }, 
