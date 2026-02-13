@@ -14,6 +14,7 @@ from smdt.store.models.actions import Actions, ActionType
 
 
 def _s(x: Any) -> str:
+    """Safely convert input to string, handling None and NaN values."""
     if isinstance(x, str):
         return x
     if x is None:
@@ -27,6 +28,7 @@ def _s(x: Any) -> str:
 
 
 def _as_id(x: Any) -> Optional[str]:
+    """Convert input to a stripped string ID, returning None if empty."""
     if x is None:
         return None
     try:
@@ -111,6 +113,10 @@ def _post_id_from_uri(uri: Optional[str]) -> Optional[str]:
 
 
 def _did_from_uri(uri: Optional[str]) -> Optional[str]:
+    """Extract Declarized Identifier (DID) from an AT-URI.
+
+    Expected format: at://<did>/<collection>/<rkey>
+    """
     # at://<did>/...
     if not uri:
         return None
@@ -132,6 +138,11 @@ def _emit_facets_entities(
     retrieved_at: datetime,
     obj: Mapping[str, Any],
 ) -> Iterable[Entities]:
+    """Generate Entity objects from Bluesky richtext facets and embeds.
+
+    Yields:
+        Entities: For hashtags, user mentions, links, and embedded images.
+    """
     # Richtext facets (tags/mentions/links)
     for facet in obj.get("facets", []) or []:
         for feat in facet.get("features", []) or []:

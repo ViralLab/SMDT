@@ -3,8 +3,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, List, Set, Tuple
 
-from numpy import record
-
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.store.models.accounts import Accounts
 from smdt.store.models.posts import Posts
@@ -21,9 +19,22 @@ from smdt.standardizers.utils import (
 
 @dataclass
 class GabStandardizer(Standardizer):
+    """
+    Standardizer for Gab data.
+    """
+
     name: str = "gab_standardizer"
 
     def _get_account_info(self, record: dict) -> Accounts:
+        """
+        Extract account information from a record.
+
+        Args:
+            record: The raw Gab record.
+
+        Returns:
+            An Accounts model instance or None.
+        """
 
         if record.get("retrieved_utc"):
             retrieved_at = datetime.fromtimestamp(int(record["retrieved_utc"]))
@@ -45,11 +56,29 @@ class GabStandardizer(Standardizer):
             return account
 
     def _get_z_count(self, value):
+        """
+        Helper to ensure count values are non-negative.
+
+        Args:
+            value: The count value to check.
+
+        Returns:
+            The value if non-negative, else None.
+        """
         if value and value >= 0:
             return value
         return None
 
     def _get_post_info(self, record: dict) -> Posts:
+        """
+        Extract post information from a record.
+
+        Args:
+            record: The raw Gab record.
+
+        Returns:
+            A Posts model instance or None.
+        """
         if record.get("created_utc"):
             timestamp = int(record["created_utc"])
             created_at = datetime.fromtimestamp(timestamp)
@@ -79,6 +108,15 @@ class GabStandardizer(Standardizer):
         return post
 
     def _get_action_info(self, record: dict) -> List[Actions]:
+        """
+        Extract action information (comments, quotes) from a record.
+
+        Args:
+            record: The raw Gab record.
+
+        Returns:
+            A list of Actions model instances.
+        """
         actions_list = []
 
         originator_post_id = str(pid) if (pid := record.get("id")) is not None else None
@@ -141,6 +179,15 @@ class GabStandardizer(Standardizer):
         return actions_list
 
     def _get_entity_info(self, record: dict) -> Set[Entities]:
+        """
+        Extract entities (links, hashtags, mentions, emails) from a record.
+
+        Args:
+            record: The raw Gab record.
+
+        Returns:
+            A set of Entities model instances.
+        """
 
         if record.get("retrieved_utc"):
             retrieved_at = datetime.fromtimestamp(int(record["retrieved_utc"]))
@@ -284,6 +331,15 @@ class GabStandardizer(Standardizer):
         return entity_set
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
+        """
+        Standardize a Gab record into a list of DB model instances.
+
+        Args:
+            input_record: A tuple containing the raw record and source info.
+
+        Returns:
+            A list of DB model instances (Accounts, Posts, Actions, Entities).
+        """
         record, src = input_record
 
         outputs = []

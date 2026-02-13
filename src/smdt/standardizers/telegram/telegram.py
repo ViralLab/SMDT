@@ -20,9 +20,25 @@ from smdt.standardizers.utils import (
 
 @dataclass
 class PushShiftTelegramStandardizer(Standardizer):
+    """
+    Standardizer for Telegram data from PushShift.
+
+    This class processes records from PushShift Telegram exports, normalizing them into the standard
+    schema models (Communities, Accounts, Posts, Entities, Actions).
+    """
+
     name: str = "telegram_standardizer"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
+        """
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+           input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+           List[Any]: A list of standardized models (Communities, Accounts, Posts, etc.) derived from the input record.
+        """
         record, src = input_record
 
         outputs = []

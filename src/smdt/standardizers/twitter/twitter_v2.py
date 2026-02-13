@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Tuple, List, Mapping, Optional
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.standardizers.utils import (
@@ -20,10 +20,10 @@ from smdt.store.models import (
 )
 
 
-# ---------- helpers ----------
-
-
 def _dt(s: Optional[str]) -> Optional[datetime]:
+    """
+    Parses ISO 8601 strings (e.g., from Twitter v2) into timezone-aware UTC datetimes.
+    """
     if not s:
         return None
     try:
@@ -38,23 +38,18 @@ def _dt(s: Optional[str]) -> Optional[datetime]:
 
 
 def _retrieved_at(root: Mapping[str, Any]) -> datetime:
+    """
+    Extracts retrieval time from internal metadata (e.g. __twarc) or defaults to now-UTC.
+    """
     ra = _dt(((root.get("__twarc") or {}).get("retrieved_at")))
     return ra or datetime.now(timezone.utc)
 
 
-# def _sum_metrics(m: Optional[Mapping[str, Any]]) -> Optional[int]:
-#     if not m:
-#         return None
-#     total = 0
-#     for v in m.values():
-#         try:
-#             total += int(v or 0)
-#         except Exception:
-#             pass
-#     return total
-
-
 def _point_ewkt(place: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """
+    Converts Twitter 'geo' objects to POINT EWKT strings (SRID=4326).
+    Checks 'coordinates' first, then 'centroid'.
+    """
     if not place:
         return None
     coords = (place.get("coordinates") or {}).get("coordinates")
@@ -72,6 +67,9 @@ def _point_ewkt(place: Optional[Mapping[str, Any]]) -> Optional[str]:
             return f"SRID=4326;POINT({lon} {lat})"
         except Exception:
             return None
+    """
+    Safely converts a value to int; returns None on failure.
+    """
     return None
 
 
@@ -85,6 +83,9 @@ def map2int(value: Any) -> Optional[int]:
 def _find_user_includes(
     rec: Mapping[str, Any], uid: Optional[str]
 ) -> Optional[Mapping[str, Any]]:
+    """
+    Looks up a user object by ID within the 'includes.users' expansion.
+    """
     if not uid:
         return None
     for u in rec.get("includes", {}).get("users", []) or []:
@@ -96,6 +97,9 @@ def _find_user_includes(
 def _find_tweet_includes(
     rec: Mapping[str, Any], tid: Optional[str]
 ) -> Optional[Mapping[str, Any]]:
+    """
+    Looks up a tweet object by ID within the 'includes.tweets' expansion.
+    """
     if not tid:
         return None
     for t in rec.get("includes", {}).get("tweets", []) or []:
@@ -134,14 +138,29 @@ def _account_from_user(
     )
 
 
-# ---------- main ----------
-
-
 @dataclass
 class TwitterV2Standardizer(Standardizer):
+    """
+    Standardizer for Twitter API v2 data.
+
+    This class processes records from Twitter API v2 exports (including expansions),
+    normalizing them into the standard schema models (Accounts, Posts, Entities, Actions).
+    """
+
     name: str = "twitter_v2"
 
-    def standardize(self, input_record) -> List[Any]:
+    def standardize(
+        self, input_record: Tuple[Mapping[str, Any], SourceInfo]
+    ) -> List[Any]:
+        """
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+           input_record (Tuple[Mapping[str, Any], SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+           List[Any]: A list of standardized models (Accounts, Posts, Actions, etc.) derived from the input record.
+        """
         record, src = input_record
 
         outputs = []

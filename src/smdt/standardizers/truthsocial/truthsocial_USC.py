@@ -1,8 +1,7 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping, Optional, List, Tuple, DefaultDict
-from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Iterable, Mapping, Optional, Tuple
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.store.models.accounts import Accounts
@@ -16,6 +15,9 @@ from ast import literal_eval
 
 
 def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
+    """
+    Calculates the total engagement count (likes, replies, retruths) for a record.
+    """
     total = 0
     for field in ("like_count", "reply_count", "retruth_count"):
         val = record.get(field)
@@ -25,6 +27,9 @@ def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
 
 
 def map2int(value: Any) -> Optional[int]:
+    """
+    Safely converts a value to an integer, returning None on failure.
+    """
     try:
         return int(value)
     except (ValueError, TypeError):
@@ -33,34 +38,35 @@ def map2int(value: Any) -> Optional[int]:
 
 @dataclass
 class TruthSocialUSCStandardizer(Standardizer):
+    """
+    Standardizer for Truth Social data (USC dataset).
+
+    This class processes records from Truth Social exports, normalizing them into the standard
+    schema models (Posts, Entities, etc.).
+    """
+
     name: str = "truthsocial_usc"
 
-    def standardize(self, input_record) -> Iterable[Any]:
+    def standardize(self, input_record: Tuple[dict, SourceInfo]) -> Iterable[Any]:
         """
-        associated_tags => Hashtags
+        Standardizes a single input record into a list of schema models.
 
-        #  These two do not have timezone info : /
-        timestamp => created_at
-        scraping Date => retrieved_at
+        Args:
+           input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
 
-        # engagement count
-        like_count
-        reply_count
-        retruth_count
+        Returns:
+           Iterable[Any]: An iterable of standardized models (Posts, Entities, etc.) derived from the input record.
 
-        # tagged_accounts
-        Action => USER_TAG
-
-        author_username => Accounts.username
-
-        # status => Posts.body
-        # status_links => Entities.URL
-
-        # is_quote => Action Quote
-
-        # is_reply => Action Reply
-
-        # is_retruth => Actions SHARE
+        Mapping Notes:
+            associated_tags => Hashtags
+            timestamp => created_at
+            scraping Date => retrieved_at
+            like_count, reply_count, retruth_count => engagement metrics
+            tagged_accounts => Entities.USER_TAG
+            author_username => Accounts.username
+            status => Posts.body
+            status_links => Entities.LINK
+            media_urls => Entities.VIDEO
         """
         # print(record)
         # input()

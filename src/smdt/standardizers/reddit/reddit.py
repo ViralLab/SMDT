@@ -18,6 +18,9 @@ from smdt.standardizers.utils import (
 
 
 def extract_reddit_mentions(text: str) -> Set[str]:
+    """
+    Extracts Reddit usernames mentioned in the text (e.g., u/username or /u/username).
+    """
     mentions = set()
     words = text.split()
     for word in words:
@@ -29,9 +32,25 @@ def extract_reddit_mentions(text: str) -> Set[str]:
 
 @dataclass
 class PushShiftRedditStandardizer(Standardizer):
+    """
+    Standardizer for Reddit data from PushShift.
+
+    This class processes records from PushShift Reddit exports, normalizing them into the standard
+    schema models (Communities, Accounts, Posts, Entities, Actions).
+    """
+
     name: str = "reddit_standardizer"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
+        """
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+           input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+           List[Any]: A list of standardized models (Communities, Accounts, Posts, etc.) derived from the input record.
+        """
         record, src = input_record
         outputs = []
 

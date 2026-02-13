@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Any, Optional, Dict, Type, Protocol
+from typing import Iterable, Mapping, Any, Optional, Dict, Tuple, Type, Protocol
 
 
 class DBModelLike(Protocol):
@@ -9,8 +9,23 @@ class DBModelLike(Protocol):
     Models must provide methods to get column names and values for insertion.
     """
 
-    def insert_columns(self, include_id: bool = False): ...
-    def insert_values(self, include_id: bool = False): ...
+    def insert_columns(self, include_id: bool = False):
+        """
+        Get string column names (e.g. for SQL INSERT).
+
+        Args:
+            include_id (bool): Whether to include the primary key column.
+        """
+        ...
+
+    def insert_values(self, include_id: bool = False):
+        """
+        Get values corresponding to columns (e.g. for SQL INSERT).
+
+        Args:
+            include_id (bool): Whether to include the primary key value.
+        """
+        ...
 
 
 @dataclass(frozen=True)
@@ -33,14 +48,16 @@ class Standardizer:
 
     name: str
 
-    def standardize(self, input_record) -> Iterable[DBModelLike]:
+    def standardize(
+        self, input_record: Tuple[dict, SourceInfo]
+    ) -> Iterable[DBModelLike]:
         """Convert a raw record into 0..N DB model instances.
 
         Args:
-            input_record: Raw input record.
+            input_record: A tuple (raw_data_dict, SourceInfo).
 
         Returns:
-            Iterable of DB model instances.
+            Iterable[DBModelLike]: Standardized schema models (Accounts, Posts, etc.).
 
         Raises:
             NotImplementedError: Must be implemented by subclasses.

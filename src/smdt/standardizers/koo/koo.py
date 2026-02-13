@@ -1,8 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
-import re
-from typing import Any, Iterable, List, Mapping, Optional
+from datetime import datetime
+from typing import Any, List, Tuple
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.standardizers.utils import (
@@ -20,16 +19,23 @@ from smdt.store.models import (
     ActionType,
     PostEnrichments,
 )
-import glob
-from pprint import pprint
-import json
 
 
 @dataclass
 class KooStandardizer(Standardizer):
+    """
+    Standardizer for Koo data.
+
+    This class processes records from Koo exports, normalizing them into the standard
+    schema models (Accounts, Posts, Entities, Actions, PostEnrichments).
+    """
+
     name: str = "koo"
 
     def get_post_comment_entities(self, record):
+        """
+        Extracts entities (mentions, hashtags, links, emails) from a post or comment record.
+        """
         entities = []
 
         if record.get("createdAt") is None:
@@ -66,9 +72,27 @@ class KooStandardizer(Standardizer):
             )
             entities.append(entity)
 
+        for email in extract_emails(record.get("title", "")):
+            entity = Entities(
+                entity_type=EntityType.EMAIL,
+                body=email,
+                account_id=str(record.get("id")),
+                created_at=created_at,
+            )
+            entities.append(entity)
+
         return entities
 
-    def standardize(self, input_record) -> List[Any]:
+    def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
+        """
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+            input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+            List[Any]: A list of standardized models (Accounts, Posts, Actions, etc.) derived from the input record.
+        """
         record, src = input_record
         outputs = []
 

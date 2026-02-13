@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, List, Mapping, Optional, List, Tuple, DefaultDict
+from typing import Any, List, Optional, Tuple, DefaultDict
 from collections import defaultdict
 
 from smdt.standardizers.base import Standardizer, SourceInfo
@@ -18,11 +18,11 @@ from smdt.standardizers.utils import (
 )
 
 
-# --------- tiny parsing helpers ---------
-
-
 def _dt(ts: Optional[str]) -> Optional[datetime]:
-
+    """
+    Parses a timestamp string from Truth Social dumps into a timezone-aware datetime object.
+    Supports formats: "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d".
+    """
     if not ts or ts == -1:
         return None
     ts = ts.strip()
@@ -37,6 +37,9 @@ def _dt(ts: Optional[str]) -> Optional[datetime]:
 
 
 def _int(x: Any) -> Optional[int]:
+    """
+    Safely converts a value to an integer. returns None for 'nan' or empty strings.
+    """
     try:
         if x is None or x == "" or str(x).lower() == "nan":
             return None
@@ -47,16 +50,19 @@ def _int(x: Any) -> Optional[int]:
 
 
 def _bool_t(x: Any) -> bool:
+    """
+    Parses boolean values from Truth Social dumps ('t'/'f', 'true', '1', 'yes').
+    """
     # Truth dumps used 't' / 'f'
     return str(x).lower() in ("t", "true", "1", "yes")
 
 
 def _nz(x: Optional[int]) -> int:
+    """
+    Returns 0 if the input integer is None, otherwise returns the integer.
+    """
+
     return 0 if x is None else x
-
-
-def _sum3(a: Optional[int], b: Optional[int], c: Optional[int]) -> int:
-    return _nz(a) + _nz(b) + _nz(c)
 
 
 @dataclass
@@ -85,10 +91,16 @@ class TruthSocialStandardizer(Standardizer):
         default_factory=lambda: defaultdict(str)
     )
 
-    def standardize(self, input_record) -> List[Any]:
+    def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
         """
+        Standardizes a single input record into a list of schema models.
         Dispatch by member (file) name. 'row' is a dict produced by your csv reader.
-        Yields: Accounts, Posts, Entities, Actions (append-only).
+
+        Args:
+           input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+           List[Any]: A list of standardized models (Accounts, Posts, Entities, Actions) derived from the input record.
         """
         record, src = input_record
         outputs = []
@@ -155,7 +167,7 @@ class TruthSocialStandardizer(Standardizer):
             if ext:
                 self.truthid_by_external[ext] = tid
 
-            # --- NEW: handle retruths (shares) ---
+            # handle retruths (shares)
             # TruthSocial dumps: "is_retruth"=='t' and "truth_retruthed" holds the original post id
             is_retruth = _bool_t(record.get("is_retruth"))
             target_post_id = (
@@ -183,7 +195,6 @@ class TruthSocialStandardizer(Standardizer):
                     self._pending_retruths[target_post_id].append(
                         (created_at, retrieved_at, tid, author)
                     )
-            # --- END NEW ---
 
             # Post row (your existing emit)
             like = _int(record.get("like_count"))
@@ -208,10 +219,6 @@ class TruthSocialStandardizer(Standardizer):
                     )
                 )
 
-            # emit mentions/emails (your existing code) ...
-            # emit reply->comment (your existing code) ...
-
-            # --- NEW: flush any retruths that were waiting on THIS post's author ---
             pending = self._pending_retruths.pop(tid, [])
             if pending:
                 for (
@@ -225,14 +232,13 @@ class TruthSocialStandardizer(Standardizer):
                             Actions(
                                 created_at=created_at,
                                 retrieved_at=retrieved_at,
-                                action_type=ActionType.SHARE,  # <- rename if needed
+                                action_type=ActionType.SHARE,
                                 originator_account_id=origin_account_id,
                                 originator_post_id=origin_post_id,
-                                target_account_id=author or None,  # now known
-                                target_post_id=tid,  # this truth
+                                target_account_id=author or None,
+                                target_post_id=tid,
                             )
                         )
-            # --- END NEW ---
             if created_at:
                 emails = extract_emails(text)
                 for email in emails:
@@ -285,7 +291,6 @@ class TruthSocialStandardizer(Standardizer):
                         )
                     )
 
-                # If this truth is a reply, create COMMENT action using the reply map
                 if _bool_t(record.get("is_reply")) and author:
                     target_user = self.replied_user_by_replying_user.get(author)
                     if target_user and created_at:
@@ -313,8 +318,6 @@ class TruthSocialStandardizer(Standardizer):
             if not (origin_post and origin_user and ext_id):
                 return outputs
 
-            # allow tests or external code to pre-populate either
-            # the 'truthid_by_external' map or a legacy/private '_external_id_map'
             external_map = getattr(self, "truthid_by_external", None) or getattr(
                 self, "_external_id_map", None
             )
@@ -325,8 +328,6 @@ class TruthSocialStandardizer(Standardizer):
                 ext_id
             )  # present after truths.tsv or prepopulated
 
-            # Prefer the original truth's created_at if known; fall back to scraped time so
-            # we still emit an action when only the external mapping is present (tests expect this).
             created_at = (
                 self.truth2created_at.get(origin_post)
                 if hasattr(self, "truth2created_at")

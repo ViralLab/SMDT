@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, List, Tuple
 
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.standardizers.utils import (
@@ -15,16 +15,30 @@ from smdt.store.models import (
     Posts,
     Entities,
     EntityType,
-    Actions,
-    ActionType,
 )
 
 
 @dataclass
 class ParlerStandardizer(Standardizer):
+    """
+    Standardizer for Parler data.
+
+    This class processes records from Parler exports, normalizing them into the standard
+    schema models (Accounts, Posts, Entities).
+    """
+
     name: str = "parler"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
+        """
+        Standardizes a single input record into a list of schema models.
+
+        Args:
+            input_record (Tuple[dict, SourceInfo]): A tuple containing the raw record and source information.
+
+        Returns:
+            List[Any]: A list of standardized models (Accounts, Posts, etc.) derived from the input record.
+        """
         outputs = []
         record, src = input_record
         if "users" in src.path:

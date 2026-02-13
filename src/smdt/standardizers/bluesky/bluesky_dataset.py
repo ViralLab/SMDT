@@ -20,6 +20,7 @@ from smdt.store.models.actions import Actions, ActionType
 
 
 def _to_str(x: Any) -> str:
+    """Convert input to string, handling None and NaN values gracefully."""
     if isinstance(x, str):
         return x
     if x is None:
@@ -82,23 +83,13 @@ def _dt(ts: Any) -> Optional[datetime]:
 
 
 def _retrieved_at(_: Mapping[str, Any]) -> datetime:
+    """Return the retrieval timestamp (UTC) for the record.
+
+    Since Bluesky dumps typically don't include a specific retrieval time,
+    this defaults to the current UTC time.
+    """
     # No embedded __twarc like Twitter; use "now".
     return datetime.now(timezone.utc)
-
-
-def _sum_metrics(m: Mapping[str, Any] | None, keys: Sequence[str]) -> Optional[int]:
-    if not m:
-        return None
-    total = 0
-    ok = False
-    for k in keys:
-        try:
-            v = int(m.get(k, 0) or 0)
-            total += v
-            ok = True or ok
-        except Exception:
-            pass
-    return total if ok else None
 
 
 def _member_kind(src: SourceInfo) -> str:
@@ -124,10 +115,19 @@ def _member_kind(src: SourceInfo) -> str:
 
 @dataclass
 class BlueSkyDatasetStandardizer(Standardizer):
+    """Standardizes Bluesky dataset records into Accounts, Posts, Entities, and Actions.
+
+    Handles different file types typically found in Bluesky data dumps, including:
+    - JSON post lists
+    - Interaction CSV/TSV files
+    - Likes CSV/TSV files
+    """
+
     name: str = "bluesky_dataset_standardizer"
 
     def standardize(self, input_record) -> List[Any]:
-        """
+        """Convert a raw input record into standard model objects.
+
         Emits: Accounts, Posts, Entities, Actions for Bluesky dumps.
 
         We rely on SourceInfo.member (or path) to decide which schema a row belongs to:
