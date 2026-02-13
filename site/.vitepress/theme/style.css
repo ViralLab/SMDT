@@ -49,10 +49,11 @@
   --vp-c-default-3: var(--vp-c-gray-3);
   --vp-c-default-soft: var(--vp-c-gray-soft);
 
-  --vp-c-brand-1: var(--vp-c-indigo-1);
-  --vp-c-brand-2: var(--vp-c-indigo-2);
-  --vp-c-brand-3: var(--vp-c-indigo-3);
-  --vp-c-brand-soft: var(--vp-c-indigo-soft);
+  /* Slate / Monochrome Theme */
+  --vp-c-brand-1: #475569; /* Slate 600 */
+  --vp-c-brand-2: #334155; /* Slate 700 */
+  --vp-c-brand-3: #1e293b; /* Slate 800 */
+  --vp-c-brand-soft: rgba(71, 85, 105, 0.16);
 
   --vp-c-tip-1: var(--vp-c-brand-1);
   --vp-c-tip-2: var(--vp-c-brand-2);
@@ -68,6 +69,18 @@
   --vp-c-danger-2: var(--vp-c-red-2);
   --vp-c-danger-3: var(--vp-c-red-3);
   --vp-c-danger-soft: var(--vp-c-red-soft);
+}
+
+.dark {
+  /* Slate - Dark Mode Adjustment */
+  /* Brand 1: Text color (Brighter) */
+  --vp-c-brand-1: #f1f5f9; /* Slate 100 */
+  /* Brand 2: Hover state (Lighter gray) */
+  --vp-c-brand-2: #64748b; /* Slate 500 */
+  /* Brand 3: Button Background (Mid-gray to support white text) */
+  --vp-c-brand-3: #475569; /* Slate 600 */
+  
+  --vp-c-brand-soft: rgba(148, 163, 184, 0.16);
 }
 
 /**
@@ -94,14 +107,14 @@
   --vp-home-hero-name-color: transparent;
   --vp-home-hero-name-background: -webkit-linear-gradient(
     120deg,
-    #bd34fe 30%,
-    #41d1ff
+    #475569 30%,
+    #cbd5e1
   );
 
   --vp-home-hero-image-background-image: linear-gradient(
     -45deg,
-    #bd34fe 50%,
-    #47caff 50%
+    #475569 50%,
+    #94a3b8 50%
   );
   --vp-home-hero-image-filter: blur(44px);
 }
@@ -177,17 +190,218 @@
 
 /* Global Background Effect */
 body {
-  /* Subtle mesh gradient using brand colors */
-  background-image: 
-    radial-gradient(circle at 0% 0%, rgba(189, 52, 254, 0.15) 0%, transparent 50%), 
-    radial-gradient(circle at 100% 100%, rgba(65, 209, 255, 0.15) 0%, transparent 50%);
+  /* Slate / Gray Gradient */
+  background: linear-gradient(-45deg, rgba(71, 85, 105, 0.05), rgba(148, 163, 184, 0.05), rgba(71, 85, 105, 0.05), rgba(148, 163, 184, 0.05));
+  background-size: 400% 400%;
+  animation: gradient 1s ease infinite;
   background-attachment: fixed;
-  background-repeat: no-repeat;
+}
+
+@keyframes gradient {
+	0% {
+		background-position: 0% 50%;
+	}
+	50% {
+		background-position: 100% 50%;
+	}
+	100% {
+		background-position: 0% 50%;
+	}
 }
 
 /* Ensure dark mode adjustment if needed */
 .dark body {
-  background-image: 
-    radial-gradient(circle at 0% 0%, rgba(189, 52, 254, 0.25) 0%, transparent 50%), 
-    radial-gradient(circle at 100% 100%, rgba(65, 209, 255, 0.25) 0%, transparent 50%);
+   /* You can adjust opacity for dark mode if needed, but the body rule above covers both */
+   background: linear-gradient(-45deg, rgba(71, 85, 105, 0.1), rgba(148, 163, 184, 0.1), rgba(71, 85, 105, 0.1), rgba(148, 163, 184, 0.1));
+   background-size: 400% 400%;
+   background-attachment: fixed;
+   animation: gradient 15s ease infinite;
+}
+
+/* Target only the arXiv hero button */
+.VPHomeHero .actions a[href*="arxiv.org"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.VPHomeHero .actions a[href*="arxiv.org"]::before {
+  content: "";
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.5rem;
+  background-color: currentColor;
+  -webkit-mask: url("/SMDT/arxiv-logo.svg") no-repeat center / contain;
+  mask: url("/SMDT/arxiv-logo.svg") no-repeat center / contain;
+}
+
+/* Target only the Paper hero button */
+.VPHomeHero .actions a[href*="paper"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.VPHomeHero .actions a[href*="paper"]::before {
+  content: "";
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.5rem;
+  background-color: currentColor;
+  -webkit-mask: url("/SMDT/paper-logo.svg") no-repeat center / contain;
+  mask: url("/SMDT/paper-logo.svg") no-repeat center / contain;
+}
+
+/* Glassmorphism for Feature Cards */
+.VPFeature {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+}
+
+.dark .VPFeature {
+  background-color: rgba(30, 41, 59, 0.3) !important; 
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Glassmorphism for Team Member Cards - More specific selector */
+.VPTeamMembersItem.medium,
+.VPTeamMembersItem.small,
+.VPTeamMembersItem.large,
+.VPTeamMembersItem {
+  background-color: transparent !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+}
+
+.dark .VPTeamMembersItem.medium,
+.dark .VPTeamMembersItem.small,
+.dark .VPTeamMembersItem.large,
+.dark .VPTeamMembersItem {
+  background-color: transparent !important; 
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Ensure inner profile container is also transparent if colored */
+.VPTeamMembersItem .profile {
+  background-color: transparent !important;
+}
+
+/* Ensure no other layers obscure transparency */
+.VPTeamMembersItem .data {
+  background-color: transparent !important;
+}
+
+/* Ensure Org is on a new line and visually distinct */
+.VPTeamMembersItem .org {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--vp-c-text-2) !important;
+  margin-top: 4px;
+}
+
+/* Hide the '@' symbol in team members card */
+.VPTeamMembersItem .at {
+  display: none !important;
+}
+
+/* Global Navbar Styling - Mimic Home Page Transparency */
+.VPNavBar {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .VPNavBar {
+  background-color: rgba(30, 41, 59, 0.2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Ensure the background gradient shows through effectively */
+.VPNavBar.fill {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+.dark .VPNavBar.fill {
+  background-color: rgba(30, 41, 59, 0.2) !important;
+}
+
+/* Ensure the navbar background stretches the full width including the logo area */
+.VPNavBarTitle {
+   background-color: transparent !important;
+}
+
+/* On wider screens with sidebar, VitePress might shift navbar content or background.
+   We force the glass background on the main wrapper. */
+.VPNavBar {
+   width: 100% !important;
+}
+
+/* Force transparency on all navbar sub-components to prevent coverage */
+.VPNavBar.has-sidebar .container,
+.VPNavBar.has-sidebar .title,
+.VPNavBar.has-sidebar .content,
+.VPNavBar.has-sidebar .content-body {
+  background-color: transparent !important;
+}
+
+/* Ensure Logo/Title area specifically is transparent */
+.VPNavBarTitle {
+  background-color: transparent !important;
+}
+
+/* Glassmorphism for Code Blocks (Citation Card) */
+div[class*="language-"] {
+  background-color: rgba(255, 255, 255, 0.5) !important; /* Lighter glass for contrast */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(200, 200, 200, 0.3) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+}
+
+.dark div[class*="language-"] {
+  background-color: rgba(30, 41, 59, 0.4) !important; /* Dark slate glass */
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Ensure code text color contrast is maintained if needed */
+/* VitePress handles syntax highlighting colors automatically, 
+   but with a transparent bg, we rely on the theme background. */
+
+/* Improve Search Box Visibility (Glass + Border) */
+.DocSearch-Button {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(100, 116, 139, 0.2) !important; /* Subtle Slate border */
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.DocSearch-Button:hover {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
+}
+
+.dark .DocSearch-Button {
+  background-color: rgba(15, 23, 42, 0.2) !important;
+  border: 1px solid rgba(148, 163, 184, 0.15) !important;
+}
+
+.dark .DocSearch-Button:hover {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.05);
+}
+
+.DocSearch-Button .DocSearch-Search-Icon {
+  color: var(--vp-c-text-1) !important;
 }

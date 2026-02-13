@@ -5,6 +5,7 @@ export default defineConfig({
   title: 'SMDT',
   description: 'Docs generated from source',
   base: '/SMDT/',                  // keep for GitHub Pages
+  appearance: 'dark',
   lastUpdated: true,
   cleanUrls: true,
   markdown: {

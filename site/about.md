@@ -13,8 +13,9 @@ const googleScholar = {
 const members = [
   {
     avatar: withBase('/team/ali_najafi.jpg'),
-    name: 'Research Lead',
-    title: 'Principal Investigator',
+    name: 'Ali Najafi',
+    title: 'PhD Student',
+    org: 'Sabanci University',
     links: [
         { icon: googleScholar, link: 'https://scholar.google.com/citations?user=c9QdS-sAAAAJ&hl=en&oi=ao' },
       { icon: 'linkedin', link: 'https://www.linkedin.com/in/najafi-ali1998' },
@@ -23,8 +24,9 @@ const members = [
   },
   {
     avatar: withBase('/team/Iannucci.jpeg'),
-    name: 'Lead Developer',
-    title: 'Core Maintainer',
+    name: 'Letizia Iannucci',
+    title: 'PhD Student',
+    org: 'Aalto University',
     links: [
         { icon: googleScholar, link: 'https://scholar.google.com/citations?user=GtzlOnEAAAAJ&hl=en&oi=ao' },
       { icon: 'github', link: 'https://github.com/letiziaia' },
@@ -33,8 +35,9 @@ const members = [
   },
   {
     avatar: withBase('/team/onur_varol.jpg'),
-    name: 'Data Scientist',
-    title: 'Algorithm Specialist',
+    name: 'Onur Varol',
+    title: 'Assistant Professor',
+    org: ' Sabanci University',
     links: [
         { icon: googleScholar, link: 'https://scholar.google.com/citations?user=t8YAefAAAAAJ' },
       { icon: 'linkedin', link: 'https://www.linkedin.com/in/onurvarol' },
@@ -43,8 +46,10 @@ const members = [
   },
   {
     avatar: withBase('/team/kivela.jpeg'),
-    name: 'Contributor',
-    title: 'Open Source Fellow',
+    name: 'Mikko Kivelä',
+    title: 'Associate Professor',
+    org: 'Aalto University',
+
     links: [
         { icon: googleScholar, link: 'https://scholar.google.com/citations?user=Z3913I0AAAAJ&hl=en&oi=ao' },
       { icon: 'linkedin', link: 'https://www.linkedin.com/in/mikko-kivel%C3%A4-3809551' },

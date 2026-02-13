@@ -9,11 +9,11 @@ hero:
       text: API Reference
       link: /api/
     - theme: alt
-      text: 📄 Paper
+      text: Paper
       link: https://example.com/paper
       target: _blank
     - theme: alt
-      text: 📜 arXiv
+      text: arXiv
       link: https://arxiv.org/abs/xxxx.xxxxx
       target: _blank
 
