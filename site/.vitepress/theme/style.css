@@ -49,11 +49,11 @@
   --vp-c-default-3: var(--vp-c-gray-3);
   --vp-c-default-soft: var(--vp-c-gray-soft);
 
-  /* Slate / Monochrome Theme */
-  --vp-c-brand-1: #475569; /* Slate 600 */
-  --vp-c-brand-2: #334155; /* Slate 700 */
-  --vp-c-brand-3: #1e293b; /* Slate 800 */
-  --vp-c-brand-soft: rgba(71, 85, 105, 0.16);
+  /* / Enterprise Theme */
+  --vp-c-brand-1: #45aaf2; /* Red 600 */
+  --vp-c-brand-2: #58b4f6; /* Red 700 x*/
+  --vp-c-brand-3: #45aaf2; /* Red 800 */
+  --vp-c-brand-soft: rgba(220, 38, 38, 0.14);
 
   --vp-c-tip-1: var(--vp-c-brand-1);
   --vp-c-tip-2: var(--vp-c-brand-2);
@@ -72,15 +72,13 @@
 }
 
 .dark {
-  /* Slate - Dark Mode Adjustment */
-  /* Brand 1: Text color (Brighter) */
-  --vp-c-brand-1: #f1f5f9; /* Slate 100 */
-  /* Brand 2: Hover state (Lighter gray) */
-  --vp-c-brand-2: #64748b; /* Slate 500 */
-  /* Brand 3: Button Background (Mid-gray to support white text) */
-  --vp-c-brand-3: #475569; /* Slate 600 */
+  /* Brand 1: Text color */
+  --vp-c-brand-1: #45aaf2; 
+  --vp-c-brand-2: #58b4f6; 
+  /* Brand 3: Button Background */
+  --vp-c-brand-3: #45aaf2; 
   
-  --vp-c-brand-soft: rgba(148, 163, 184, 0.16);
+  --vp-c-brand-soft: rgba(45, 0, 248, 0.16);
 }
 
 /**
@@ -107,14 +105,14 @@
   --vp-home-hero-name-color: transparent;
   --vp-home-hero-name-background: -webkit-linear-gradient(
     120deg,
-    #475569 30%,
-    #cbd5e1
+    #45aaf2  30%,
+    #64748b
   );
 
   --vp-home-hero-image-background-image: linear-gradient(
     -45deg,
-    #475569 50%,
-    #94a3b8 50%
+    #45aaf2 50%,
+    #64748b 50%  
   );
   --vp-home-hero-image-filter: blur(44px);
 }
@@ -191,9 +189,9 @@
 /* Global Background Effect */
 body {
   /* Slate / Gray Gradient */
-  background: linear-gradient(-45deg, rgba(71, 85, 105, 0.05), rgba(148, 163, 184, 0.05), rgba(71, 85, 105, 0.05), rgba(148, 163, 184, 0.05));
+  background: linear-gradient(-45deg, rgba(71, 85, 105, 0.15), rgba(148, 163, 184, 0.15), rgba(71, 85, 105, 0.15), rgba(148, 163, 184, 0.15));
   background-size: 400% 400%;
-  animation: gradient 1s ease infinite;
+  animation: gradient 15s ease infinite;
   background-attachment: fixed;
 }
 
@@ -212,7 +210,7 @@ body {
 /* Ensure dark mode adjustment if needed */
 .dark body {
    /* You can adjust opacity for dark mode if needed, but the body rule above covers both */
-   background: linear-gradient(-45deg, rgba(71, 85, 105, 0.1), rgba(148, 163, 184, 0.1), rgba(71, 85, 105, 0.1), rgba(148, 163, 184, 0.1));
+   background: linear-gradient(-45deg, rgba(71, 85, 105, 0.3), rgba(148, 163, 184, 0.3), rgba(71, 85, 105, 0.3), rgba(148, 163, 184, 0.3));
    background-size: 400% 400%;
    background-attachment: fixed;
    animation: gradient 15s ease infinite;
@@ -223,6 +221,27 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Enhanced Visibility */
+  background-color: #ffffff !important;
+  color: #334155 !important; /* Slate 700 */
+  border: 1px solid rgba(0,0,0,0.1) !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border-radius: 20px !important; /* Ensure rounded pill shape */
+  font-weight: 600 !important;
+  transition: all 0.2s ease;
+}
+
+.dark .VPHomeHero .actions a[href*="arxiv.org"] {
+  background-color: #1e293b !important; /* Slate 800 */
+  color: #f1f5f9 !important; /* Slate 100 */
+  border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+.VPHomeHero .actions a[href*="arxiv.org"]:hover {
+  transform: translateY(-1px);
+  color: var(--vp-c-brand-1) !important;
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 .VPHomeHero .actions a[href*="arxiv.org"]::before {
@@ -241,6 +260,27 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Enhanced Visibility */
+  background-color: #ffffff !important;
+  color: #334155 !important;
+  border: 1px solid rgba(0,0,0,0.1) !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border-radius: 20px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease;
+}
+
+.dark .VPHomeHero .actions a[href*="paper"] {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+.VPHomeHero .actions a[href*="paper"]:hover {
+  transform: translateY(-1px);
+  color: var(--vp-c-brand-1) !important;
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 .VPHomeHero .actions a[href*="paper"]::before {
@@ -262,6 +302,13 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
   border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.VPFeature:hover {
+  transform: translateY(-1px);
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 .dark .VPFeature {
@@ -280,6 +327,16 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
   border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.VPTeamMembersItem.medium:hover,
+.VPTeamMembersItem.small:hover,
+.VPTeamMembersItem.large:hover,
+.VPTeamMembersItem:hover {
+  transform: translateY(-1px);
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 .dark .VPTeamMembersItem.medium,
