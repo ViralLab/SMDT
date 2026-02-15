@@ -370,6 +370,12 @@ body {
   display: none !important;
 }
 
+/* Hover color for Team Member Social Links */
+.VPTeamMembersItem .links a:hover {
+  color: #1b90e3 !important;
+  transition: color 0.2s ease;
+}
+
 /* Global Navbar Styling - Mimic Home Page Transparency */
 .VPNavBar {
   background-color: rgba(255, 255, 255, 0.05) !important;
