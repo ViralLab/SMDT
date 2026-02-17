@@ -90,7 +90,7 @@ class VLLMClientEnricher(BaseEnricher):
                 ) from e
 
         # model_id used in post_enrichments.model_id
-        self.MODEL_ID = f"{self.ENRICHER_ID}_{self.cfg.model_id_postfix}"
+        self.MODEL_ID = f"{self._ENRICHER_ID}_{self.cfg.model_id_postfix}"
         self.applied_datetime = datetime.now(timezone.utc)
         self.client = None  # set in load_model()
 

@@ -174,7 +174,7 @@ class LanguageDetectionEnricher(BaseEnricher):
                 {
                     "created_at": created_at,
                     "post_id": post_id,
-                    "model_id": self.ENRICHER_ID,
+                    "model_id": self._ENRICHER_ID,
                     "body": payload,
                 }
             )

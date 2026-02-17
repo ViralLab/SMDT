@@ -140,7 +140,7 @@ class TextGenEnricher(BaseEnricher):
         self._adapter = None  # lazy
 
         # model_id stored in post_enrichments
-        self.ENRICHER_ID = f"{self.ENRICHER_ID_BASE}_{self.cfg.model_id_postfix}"
+        self._ENRICHER_ID = f"{self.ENRICHER_ID_BASE}_{self.cfg.model_id_postfix}"
         self.applied_datetime = datetime.now(timezone.utc)
 
         # rate limiter
@@ -187,7 +187,7 @@ class TextGenEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.ENRICHER_ID)
+            params.append(self._ENRICHER_ID)
 
         # Use the real table for exclusion
         if not self.cfg.reset_cache and self.cached_ids:
@@ -214,7 +214,7 @@ class TextGenEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.ENRICHER_ID)
+            params.append(self._ENRICHER_ID)
 
         if not self.cfg.reset_cache and self.cached_ids:
             where_clauses.append(
@@ -305,7 +305,7 @@ class TextGenEnricher(BaseEnricher):
                     "created_at": self.applied_datetime,
                     "retrieved_at": self.applied_datetime,
                     "post_id": pid,
-                    "model_id": self.ENRICHER_ID,
+                    "model_id": self._ENRICHER_ID,
                     "content": payload,  # JSONB
                 }
             )

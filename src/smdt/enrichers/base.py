@@ -17,12 +17,12 @@ class BaseEnricher(ABC):
     3. Saving the enriched results back to the database.
 
     Attributes:
-        TARGET: The target table or entity type (e.g., "posts", "accounts").
-        ENRICHER_ID: Unique identifier for the enricher.
+        _TARGET: The target table or entity type (e.g., "posts", "accounts").
+        _ENRICHER_ID: Unique identifier for the enricher.
     """
 
-    TARGET: str = "posts"  # or "accounts"
-    ENRICHER_ID: str = "base"  # used in (post_id, model_id) or (account_id, model_id)
+    _TARGET: str = "posts"  
+    _ENRICHER_ID: str = "base"  
 
     def __init__(self, db, *, config: Optional[Dict[str, Any]] = None):
         """Initialize the enricher.
@@ -66,7 +66,7 @@ class BaseEnricher(ABC):
 
     def reset_cache(self) -> None:
         """Reset the cache by clearing cached IDs."""
-        cache_file = Path(self.cache_dir) / f"{self.ENRICHER_ID}_cached_ids.txt"
+        cache_file = Path(self.cache_dir) / f"{self._ENRICHER_ID}_cached_ids.txt"
         if cache_file.exists():
             cache_file.unlink()
 
@@ -88,7 +88,7 @@ class BaseEnricher(ABC):
         """
         # ensure cache directory exists
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
-        cache_file = Path(self.cache_dir) / f"{self.ENRICHER_ID}_cached_ids.txt"
+        cache_file = Path(self.cache_dir) / f"{self._ENRICHER_ID}_cached_ids.txt"
         # append to the file
         with open(cache_file, "a") as f:
             for id_ in ids:
@@ -99,7 +99,7 @@ class BaseEnricher(ABC):
             return
 
         # Create a safe table name (e.g., cache_bert_sentiment)
-        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self.ENRICHER_ID).lower()
+        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self._ENRICHER_ID).lower()
         self.cache_table_name = f"cache_ids_{safe_name}"
 
         conn = self.db.connect()
@@ -130,7 +130,7 @@ class BaseEnricher(ABC):
             Iterable of cached IDs.
         """
         # check if cache file exists
-        cache_file = Path(self.cache_dir) / f"{self.ENRICHER_ID}_cached_ids.txt"
+        cache_file = Path(self.cache_dir) / f"{self._ENRICHER_ID}_cached_ids.txt"
         if not cache_file.exists():
             return []
 
