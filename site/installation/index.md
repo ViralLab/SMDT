@@ -124,7 +124,7 @@ SMDT reads configuration from environment variables.
 
 2.  **Add Database Credentials**:
     
-    ```env
+    ```bash
     # .env
     DEFAULT_DB_NAME=smdt_db
     DB_USER=smdt_user

@@ -9,6 +9,9 @@ hero:
       text: API Reference
       link: /api/
     - theme: alt
+      text: Recipes
+      link: /recipes/
+    - theme: alt
       text: Paper
       link: https://example.com/paper
       target: _blank

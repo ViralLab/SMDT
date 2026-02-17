@@ -468,3 +468,102 @@ div[class*="language-"] {
 .DocSearch-Button .DocSearch-Search-Icon {
   color: var(--vp-c-text-1) !important;
 }
+
+/* Custom Style for the 'API Reference' Button (1st Hero Action) */
+.VPHero .actions .action:nth-child(1) .VPButton {
+  transition: all 0.25s ease;
+  border-radius: 20px;
+}
+
+.VPHero .actions .action:nth-child(1) .VPButton:hover {
+  text-decoration: none;
+  /* Use brand color for shadow */
+  box-shadow: 0 0 10px var(--vp-c-brand-2); 
+  transform: translateY(-1px);
+}
+
+.VPHero .actions .action:nth-child(1) .VPButton:active {
+  transform: translateY(0);
+  box-shadow: 0 0 4px var(--vp-c-brand-2);
+}
+
+/* Custom Style for the 'Recipes' Button (2nd Hero Action) */
+.VPHero .actions .action:nth-child(2) .VPButton {
+  /* Common shape and transition properties */
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-radius: 20px;
+  transition: all 0.25s ease;
+  min-width: 146px; 
+  padding: 0 20px;
+  
+  /* Flex for icon alignment */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* space between icon and text */
+
+  /* Glass effect */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Icon for Recipes Button (Cooking Pot) */
+.VPHero .actions .action:nth-child(2) .VPButton::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='m4 8 16-4'/%3E%3Cpath d='m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.55a2 2 0 0 1 2.43 1.45l.45 1.81'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='m4 8 16-4'/%3E%3Cpath d='m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.55a2 2 0 0 1 2.43 1.45l.45 1.81'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+/* Dark Mode Default (Tomato) */
+html.dark .VPHero .actions .action:nth-child(2) .VPButton {
+  background-color: rgba(255, 99, 71, 0.15) !important;
+  border-color: rgba(255, 99, 71, 0.3) !important;
+  color: #ff6347 !important;
+}
+
+html.dark .VPHero .actions .action:nth-child(2) .VPButton:hover {
+  background-color: rgba(255, 99, 71, 0.25) !important;
+  border-color: #ff6347 !important;
+  color: #ff6347 !important;
+  box-shadow: 0 0 10px rgba(255, 99, 71, 0.4);
+  transform: translateY(-1px);
+}
+
+html.dark .VPHero .actions .action:nth-child(2) .VPButton:active {
+  background-color: rgba(255, 99, 71, 0.35) !important;
+  transform: translateY(0);
+  box-shadow: 0 0 4px rgba(255, 99, 71, 0.4);
+}
+
+/* Light Mode Overrides (Green for white/light theme) */
+html:not(.dark) .VPHero .actions .action:nth-child(2) .VPButton {
+  /* Using a nice "Forest Green" or "Sea Green" feel */
+  background-color: rgba(46, 139, 87, 0.1) !important;
+  border-color: rgba(46, 139, 87, 0.3) !important;
+  color: #2e8b57 !important; 
+}
+
+html:not(.dark) .VPHero .actions .action:nth-child(2) .VPButton:hover {
+  background-color: rgba(46, 139, 87, 0.2) !important;
+  border-color: #2e8b57 !important;
+  color: #2e8b57 !important;
+  box-shadow: 0 0 10px rgba(46, 139, 87, 0.4);
+  transform: translateY(-1px);
+}
+
+html:not(.dark) .VPHero .actions .action:nth-child(2) .VPButton:active {
+  background-color: rgba(46, 139, 87, 0.3) !important;
+  transform: translateY(0);
+  box-shadow: 0 0 4px rgba(46, 139, 87, 0.4);
+}

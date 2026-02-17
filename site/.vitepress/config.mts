@@ -26,14 +26,37 @@ export default defineConfig({
       '/api/': apiSidebar,
       '/recipes/': [
         {
-          text: 'Recipes',
+          text: 'Essentials',
           items: [
             { text: 'Overview', link: '/recipes/' },
             { text: 'Getting Started', link: '/recipes/getting-started' },
+          ]
+        },
+        {
+          text: 'Ingestion',
+          items: [
+            { text: 'Using Pipelines', link: '/recipes/using-pipelines' },
             { text: 'Standardizing Twitter v2', link: '/recipes/standardizing-twitter-v2' },
-            { text: 'Temporal Networks', link: '/recipes/temporal-networks' },
-            { text: 'Building a Custom Standardizer', link: '/recipes/building-custom-standardizer' },
-            { text: 'NLP Enrichment with LLMs', link: '/recipes/nlp-enrichment' }
+            { text: 'Custom Standardizers', link: '/recipes/building-custom-standardizer' },
+          ]
+        },
+        {
+          text: 'Enrichment',
+          items: [
+            { text: 'NLP Enrichment', link: '/recipes/enrichment/nlp' },
+          ]
+        },
+        {
+          text: 'Analysis',
+          items: [
+            { text: 'Database Inspector', link: '/recipes/analysis/inspector' },
+          ]
+        },
+        {
+          text: 'Network Analysis',
+          items: [
+            { text: 'Network Construction', link: '/recipes/networks/construction' },
+            { text: 'Temporal Networks', link: '/recipes/networks/temporal' },
           ]
         }
       ],

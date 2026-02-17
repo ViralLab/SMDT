@@ -1,8 +1,10 @@
-# Generating Temporal Interaction Networks
+# Temporal Networks
 
-This recipe demonstrates how to generate temporal networks of user interactions (e.g., RETWEET/SHARE) over a specific time range. This is useful for analyzing how community structures evolve over time.
+This recipe demonstrates how to generate **temporal networks** of user interactions (e.g., RETWEET/SHARE) over a specific time range. This is useful for analyzing how community structures evolve over time.
 
 ## Overview
+
+Unlike standard network construction which creates a single aggregate graph, this approach slices the data into time windows (e.g., weekly or daily).
 
 The script connects to a database, specifies a time window and step size, and iteratively builds networks for each window. The resulting networks are saved as pickle files.
 

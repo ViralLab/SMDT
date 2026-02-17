@@ -14,7 +14,7 @@ uv run python -c "import smdt; print('SMDT installed successfully')"
 
 Make sure your `.env` file is set up correctly in the root of your project:
 
-```env
+```bash
 DEFAULT_DB_NAME=smdt_db
 DB_USER=postgres
 DB_PASSWORD=your_password
@@ -51,20 +51,19 @@ You can connect to your TimescaleDB-enabled PostgreSQL database using `StandardD
 
 ```python
 from smdt.store.standard_db import StandardDB
+import os
 
 # Initialize database connection
-# It automatically reads configuration from environment variables
-db = StandardDB()
+# Note: Ensure you pass the correct database name
+db_name = os.getenv("DEFAULT_DB_NAME", "smdt_db")
+db = StandardDB(db_name)
 
 try:
     # Check connection
-    conn = db.connect() 
-    try:
+    with db.connect() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
-            print("Database connection successful!")
-    finally:
-        conn.close()
+            print(f"Connected to database '{db_name}' successfully!")
 except Exception as e:
     print(f"Database connection failed: {e}")
 ```

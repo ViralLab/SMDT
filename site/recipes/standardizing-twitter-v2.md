@@ -169,7 +169,7 @@ Should I start ingestion? (y/n): y
 
 Starting Pipeline...
 Pipeline files:   0%|                                                                                                                                                           | 0/1 [00:00<?, ?it/s][Progress] 
-file_start: {'path': '/cta/users/anajafi/SMDT/sample_twitter_v2.jsonl'}
+file_start: {'path': 'current_dir/sample_twitter_v2.jsonl'}
                                    [Progress] file_end: {'path': '/cta/users/anajafi/SMDT/sample_twitter_v2.jsonl', 'records': 5, 'models': 20, 'record_errors': 0, 'row_failures': 0, 'elapsed': 0.4030951801687479}                    
 Pipeline files: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.48it/s]
 [Progress] flush: {'model': 'Accounts', 'count': 2, 'elapsed': 0.12162525579333305}
