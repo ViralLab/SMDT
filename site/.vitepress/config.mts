@@ -17,18 +17,31 @@ export default defineConfig({
     // https://vitepress.dev/reference/default-theme-config
     nav: [
       { text: 'Home', link: '/' },
-      { text: 'Examples', link: '/examples/' },
+      { text: 'Install', link: '/installation/' },
+      { text: 'Recipes', link: '/recipes/' },
       { text: 'About Us', link: '/about' }
     ],
 
     sidebar: {
       '/api/': apiSidebar,
-      '/examples/': [
+      '/recipes/': [
         {
-          text: 'Examples',
+          text: 'Recipes',
           items: [
-            { text: 'Overview', link: '/examples/' },
-            { text: 'Getting Started', link: '/examples/getting-started' }
+            { text: 'Overview', link: '/recipes/' },
+            { text: 'Getting Started', link: '/recipes/getting-started' },
+            { text: 'Standardizing Twitter v2', link: '/recipes/standardizing-twitter-v2' },
+            { text: 'Temporal Networks', link: '/recipes/temporal-networks' },
+            { text: 'Building a Custom Standardizer', link: '/recipes/building-custom-standardizer' },
+            { text: 'NLP Enrichment with LLMs', link: '/recipes/nlp-enrichment' }
+          ]
+        }
+      ],
+      '/installation/': [
+        {
+          text: 'Installation',
+          items: [
+            { text: 'Guide', link: '/installation/' },
           ]
         }
       ]
