@@ -14,7 +14,7 @@ from smdt.standardizers.utils import extract_emails
 from ast import literal_eval
 
 
-def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
+def _sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
     """
     Calculates the total engagement count (likes, replies, retruths) for a record.
     """
@@ -26,7 +26,7 @@ def sum_engagements(record: Mapping[str, Any]) -> Optional[int]:
     return total
 
 
-def map2int(value: Any) -> Optional[int]:
+def _map2int(value: Any) -> Optional[int]:
     """
     Safely converts a value to an integer, returning None on failure.
     """
@@ -40,6 +40,10 @@ def map2int(value: Any) -> Optional[int]:
 class TruthSocialUSCStandardizer(Standardizer):
     """
     Standardizer for Truth Social data (USC dataset).
+
+    Dataset Paper Reference: https://arxiv.org/abs/2411.01330
+    
+    Dataset Link: https://github.com/kashish-s/TruthSocial_2024ElectionInitiative
 
     This class processes records from Truth Social exports, normalizing them into the standard
     schema models (Posts, Entities, etc.).
@@ -82,10 +86,10 @@ class TruthSocialUSCStandardizer(Standardizer):
                     post_id=post_id,
                     conversation_id=None,
                     body=record["status"],
-                    like_count=map2int(record.get("like_count")),
+                    like_count=_map2int(record.get("like_count")),
                     view_count=None,
-                    share_count=map2int(record.get("retruth_count")),
-                    comment_count=map2int(record.get("reply_count")),
+                    share_count=_map2int(record.get("retruth_count")),
+                    comment_count=_map2int(record.get("reply_count")),
                     quote_count=None,
                     bookmark_count=None,
                     location=None,

@@ -19,7 +19,18 @@ from smdt.standardizers.utils import (
 
 
 @dataclass
-class ScoredStandardizer(Standardizer):
+class ScoredStandardizer(Standardizer):    
+    """
+    Standardizer for Reddit data from PushShift.
+
+        
+    Dataset Paper Reference: https://arxiv.org/abs/2405.10233
+    
+    Dataset Link: https://zenodo.org/records/10516043
+
+    This class processes records from PushShift Reddit exports, normalizing them into the standard
+    schema models (Communities, Accounts, Posts, Entities, Actions).
+    """
     name: str = "scored_standardizer"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:

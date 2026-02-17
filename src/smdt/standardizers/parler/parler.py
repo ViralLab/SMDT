@@ -22,6 +22,10 @@ from smdt.store.models import (
 class ParlerStandardizer(Standardizer):
     """
     Standardizer for Parler data.
+    
+    Dataset Paper Reference: https://arxiv.org/abs/2101.03820
+    
+    Dataset Link: https://zenodo.org/records/4442460
 
     This class processes records from Parler exports, normalizing them into the standard
     schema models (Accounts, Posts, Entities).

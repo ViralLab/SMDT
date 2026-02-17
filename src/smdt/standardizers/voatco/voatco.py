@@ -25,6 +25,10 @@ class VoatCoStandardizer(Standardizer):
     """
     Standardizer for Voat.co data.
 
+    Dataset Paper Reference: https://arxiv.org/pdf/2201.05933
+    
+    Dataset Link: https://zenodo.org/records/5841668
+
     This class processes records from Voat.co exports, normalizing them into the standard
     schema models (Communities, Accounts, Posts, Entities, Actions).
     """

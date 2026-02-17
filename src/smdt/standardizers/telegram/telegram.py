@@ -23,6 +23,10 @@ class PushShiftTelegramStandardizer(Standardizer):
     """
     Standardizer for Telegram data from PushShift.
 
+    Dataset Paper Reference:  https://arxiv.org/pdf/2001.08438
+    
+    Dataset Link: https://zenodo.org/records/3607497
+
     This class processes records from PushShift Telegram exports, normalizing them into the standard
     schema models (Communities, Accounts, Posts, Entities, Actions).
     """

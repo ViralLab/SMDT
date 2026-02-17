@@ -35,6 +35,11 @@ class PushShiftRedditStandardizer(Standardizer):
     """
     Standardizer for Reddit data from PushShift.
 
+        
+    Dataset Paper Reference: https://arxiv.org/pdf/2001.08435
+    
+    Dataset Link: https://files.pushshift.io/reddit/
+
     This class processes records from PushShift Reddit exports, normalizing them into the standard
     schema models (Communities, Accounts, Posts, Entities, Actions).
     """

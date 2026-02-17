@@ -68,8 +68,9 @@ def _nz(x: Optional[int]) -> int:
 @dataclass
 class TruthSocialStandardizer(Standardizer):
     """
-    Streaming standardizer that uses small in-memory maps to replace pandas joins.
-    Relies on member_order so caches are available before we hit dependent files.
+    Dataset Paper Reference: https://arxiv.org/abs/2303.11240
+
+    Dataset Link: https://zenodo.org/records/7531625
     """
 
     name: str = "truth_social_stream"

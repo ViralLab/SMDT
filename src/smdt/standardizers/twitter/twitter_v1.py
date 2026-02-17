@@ -35,7 +35,7 @@ def _point_ewkt(geo: Optional[Mapping[str, Any]]) -> Optional[str]:
             return None
 
 
-def map2int(value: Any) -> Optional[int]:
+def _map2int(value: Any) -> Optional[int]:
     """
     Safely converts a value to an integer, returning None on failure.
     """
@@ -128,11 +128,11 @@ class TwitterV1Standardizer(Standardizer):
                     post_id=record.get("id_str"),
                     conversation_id=record.get("in_reply_to_status_id_str"),
                     body=body,
-                    like_count=map2int(record.get("favorite_count")),
+                    like_count=_map2int(record.get("favorite_count")),
                     view_count=None,
-                    share_count=map2int(record.get("retweet_count")),
-                    comment_count=map2int(record.get("reply_count")),
-                    quote_count=map2int(record.get("quote_count")),
+                    share_count=_map2int(record.get("retweet_count")),
+                    comment_count=_map2int(record.get("reply_count")),
+                    quote_count=_map2int(record.get("quote_count")),
                     bookmark_count=None,
                     location=_point_ewkt(record.get("geo")),
                     created_at=self._parse_dt(record.get("created_at")),

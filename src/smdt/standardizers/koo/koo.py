@@ -26,6 +26,10 @@ class KooStandardizer(Standardizer):
     """
     Standardizer for Koo data.
 
+    Dataset Paper Reference: https://arxiv.org/abs/2401.07599
+    
+    Dataset Link: https://zenodo.org/records/10476212
+
     This class processes records from Koo exports, normalizing them into the standard
     schema models (Accounts, Posts, Entities, Actions, PostEnrichments).
     """

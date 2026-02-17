@@ -19,7 +19,6 @@ from smdt.standardizers.utils import (
 
 
 def nan_to_none(val: Any) -> Any:
-    """Normalize various NaN-like values to None/leave normal scalars as-is."""
     if val is None:
         return None
     # Fast path: ints / bools / normal strings
@@ -38,7 +37,6 @@ def nan_to_none(val: Any) -> Any:
 
 
 def map2int(value: Any) -> Optional[int]:
-    """Convert value to int if possible, returning None on failure or NaN-like."""
     value = nan_to_none(value)
     if value is None:
         return None
@@ -49,7 +47,6 @@ def map2int(value: Any) -> Optional[int]:
 
 
 def _dt(s: Optional[str]) -> Optional[datetime]:
-    """Parse ISO8601-ish timestamp into timezone-aware UTC datetime."""
     if not s:
         return None
     try:
@@ -67,6 +64,10 @@ def _dt(s: Optional[str]) -> Optional[datetime]:
 class TwitterUSCStandardizer(Standardizer):
     """
     Standardizer for Twitter data (USC dataset).
+
+    Dataset Paper Reference: https://arxiv.org/abs/2411.00376
+    
+    Dataset Link: https://github.com/sinking8/x-24-us-election
 
     This class processes records from Twitter exports (USC collection), normalizing them into the standard
     schema models (Accounts, Posts, Entities, Actions).

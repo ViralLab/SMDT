@@ -21,6 +21,13 @@ from smdt.standardizers.utils import (
 class GabStandardizer(Standardizer):
     """
     Standardizer for Gab data.
+    
+    Dataset Paper Reference: None
+    
+    Dataset Link: https://academictorrents.com/details/064f2953e8b16a9b33119874aa0b1a907d857bc1
+
+    This class processes records from Gab exports, normalizing them into the standard
+    schema models (Accounts, Posts, Entities).
     """
 
     name: str = "gab_standardizer"

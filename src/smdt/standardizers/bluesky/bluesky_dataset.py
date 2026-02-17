@@ -115,12 +115,15 @@ def _member_kind(src: SourceInfo) -> str:
 
 @dataclass
 class BlueSkyDatasetStandardizer(Standardizer):
-    """Standardizes Bluesky dataset records into Accounts, Posts, Entities, and Actions.
+    """
+    Standardizer for BlueSky  data.
+    
+    Dataset Paper Reference: https://arxiv.org/abs/2404.18984
+    
+    Dataset Link: https://zenodo.org/records/11082879
 
-    Handles different file types typically found in Bluesky data dumps, including:
-    - JSON post lists
-    - Interaction CSV/TSV files
-    - Likes CSV/TSV files
+    This class processes records from BlueSky exports, normalizing them into the standard
+    schema models (Accounts, Posts, Entities).
     """
 
     name: str = "bluesky_dataset_standardizer"
