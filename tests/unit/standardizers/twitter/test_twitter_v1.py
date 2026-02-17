@@ -2,7 +2,7 @@ import pytest
 
 from smdt.standardizers.twitter.twitter_v1 import (
     TwitterV1Standardizer,
-    map2int,
+    _map2int,
     _point_ewkt,
 )
 from smdt.standardizers.base import SourceInfo
@@ -13,7 +13,7 @@ from smdt.store.models.accounts import Accounts
 @pytest.mark.parametrize("input_value,expected", [("3", 3), (None, None)])
 def test_map2int(input_value, expected):
     """map2int should convert numeric strings to int and return None for None."""
-    assert map2int(input_value) == expected
+    assert _map2int(input_value) == expected
 
 
 @pytest.mark.parametrize(

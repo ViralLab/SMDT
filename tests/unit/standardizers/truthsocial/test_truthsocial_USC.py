@@ -1,7 +1,7 @@
 import pytest
 from smdt.standardizers.truthsocial.truthsocial_USC import (
-    sum_engagements,
-    map2int,
+    _sum_engagements,
+    _map2int,
     TruthSocialUSCStandardizer,
 )
 from smdt.standardizers.base import SourceInfo
@@ -14,7 +14,7 @@ from smdt.store.models.actions import Actions, ActionType
 def test_sum_engagements():
     """sum_engagements should return the sum of engagement counts in the record."""
     rec = {"like_count": 2, "reply_count": 1, "retruth_count": 3}
-    result = sum_engagements(rec)
+    result = _sum_engagements(rec)
     assert result == 6
 
 
@@ -27,7 +27,7 @@ def test_sum_engagements():
 )
 def test_map2int_parametrized(input_value, expected):
     """map2int should convert numeric strings to int and return None for non-numeric."""
-    result = map2int(input_value)
+    result = _map2int(input_value)
     assert result == expected
 
 
