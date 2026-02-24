@@ -257,7 +257,6 @@ class Anonymizer:
         if table == "entities":
             et = row.get("entity_type")
             raw_body = row.get("body")
-            body_length = len(raw_body) if raw_body is not None else None
             for col, val in row.items():
                 if col == "body":
                     continue
@@ -272,7 +271,6 @@ class Anonymizer:
             out["body"] = self.redactor.sanitize_entity_body(
                 str(et) if et is not None else "", raw_body
             )
-            out["body_length"] = body_length
             return out
 
         for col, val in row.items():
