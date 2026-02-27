@@ -47,6 +47,12 @@ export default defineConfig({
           ]
         },
         {
+          text: 'Data Privacy',
+          items: [
+            { text: 'Pseudonymization', link: '/recipes/pseudonymization' },
+          ]
+        },
+        {
           text: 'Analysis',
           items: [
             { text: 'Database Inspector', link: '/recipes/analysis/inspector' },

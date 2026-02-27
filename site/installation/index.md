@@ -14,7 +14,7 @@ Before installing the Python package, you must set up the database backend.
 
 SMDT relies on a PostgreSQL database with **TimescaleDB** and **PostGIS** extensions enabled.
 
-::: details Click to expand OS-specific installation instructions (macOS, Linux)
+::: details Click to expand OS-specific installation instructions (macOS, Linux, Windows)
 
 #### macOS (Homebrew)
 ```bash
@@ -56,6 +56,31 @@ sudo timescaledb-tune --quiet --yes
 sudo apt install postgresql-14-postgis-3
 sudo systemctl restart postgresql
 ```
+
+#### Windows (Installer)
+
+Since PostgreSQL on Windows is typically installed via an installer rather than a package manager, follow these steps:
+
+1.  **Install PostgreSQL 14**:
+    *   Download the installer from [EnterpriseDB](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
+    *   Run the installer. Keep the default settings and remember your superuser password.
+    *   At the end, ensure **"Launch Stack Builder at exit"** is checked.
+
+2.  **Install PostGIS**:
+    *   In **Stack Builder**, select your PostgreSQL 14 installation.
+    *   Expand `Spatial Extensions` and check **PostGIS 3.x Bundle for PostgreSQL 14**.
+    *   Follow the prompts to install.
+
+3.  **Install TimescaleDB**:
+    *   Download the latest `.zip` release for Windows (e.g., `timescaledb-postgresql-14-windows-amd64.zip`) from [TimescaleDB Releases](https://github.com/timescale/timescaledb/releases).
+    *   Extract the zip archive.
+    *   Run `setup.exe` as Administrator.
+    *   Follow prompts to tune configuration.
+
+4.  **Restart Service**:
+    *   Open "Services" (Run `services.msc`).
+    *   Restart the `postgresql-x64-14` service.
+
 :::
 
 ### Initialize the Database

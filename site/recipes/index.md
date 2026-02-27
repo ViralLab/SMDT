@@ -29,6 +29,13 @@ Unlock insights from your social media data.
 - **[NLP Enrichment with LLMs](./enrichment/nlp.md)**  
   Enhance your text data using Large Language Models (LLMs). Learn how to configure local (Ollama, HF) or remote (OpenAI) models to perform tasks like sentiment analysis, toxicity detection, and topic classification.
 
+## Data Privacy
+
+Ensure your data is safe to share.
+
+- **[Pseudonymization](./pseudonymization.md)**  
+  Learn how to pseudonymize identifiers and redact sensitive text using the built-in Anonymizer and configurable policies.
+
 ## Analysis
 
 Verify your data quality and schema health.
