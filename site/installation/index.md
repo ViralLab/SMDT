@@ -72,7 +72,7 @@ Since PostgreSQL on Windows is typically installed via an installer rather than 
     *   Follow the prompts to install.
 
 3.  **Install TimescaleDB**:
-    *   Download the latest `.zip` release for Windows (e.g., `timescaledb-postgresql-14-windows-amd64.zip`) from [TimescaleDB Releases](https://github.com/timescale/timescaledb/releases).
+    *   Download the latest `.zip` release for Windows (e.g., `timescaledb-postgresql-14-windows-amd64.zip`) from [TimescaleDB Releases](https://github.com/timescale/timescaledb/releases/tag/2.19.3).
     *   Extract the zip archive.
     *   Run `setup.exe` as Administrator.
     *   Follow prompts to tune configuration.
