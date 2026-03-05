@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
+*.DS_Store
 
 # Node
 node_modules/

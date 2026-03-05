@@ -92,11 +92,15 @@ Once PostgreSQL is running, create the database and user, and enable the require
     psql -U postgres
     ```
 
+    ::: tip
+    If the `psql` command is not recognized, ensure that the PostgreSQL `bin` directory is added to your system's `PATH`.
+    :::
+
 2.  **Run SQL Setup**:
     ```sql
-    -- 1. Create database and user
+    -- 1. Create database and a superuser
     CREATE DATABASE smdt_db;
-    CREATE USER smdt_user WITH ENCRYPTED PASSWORD 'secure_password';
+    CREATE USER your_username WITH SUPERUSER PASSWORD 'your_secure_password';
     GRANT ALL PRIVILEGES ON DATABASE smdt_db TO smdt_user;
 
     -- 2. Connect to the new database
