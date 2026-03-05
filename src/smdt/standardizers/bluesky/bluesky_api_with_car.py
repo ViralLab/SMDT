@@ -188,7 +188,8 @@ class BlueSkyAPICARStandardizer(Standardizer):
         path = getattr(src, "path", "")
 
         # ===================== Account records: all_users =====================
-        if "all_users" in path:
+        # if "all_users" in path:
+        if "accounts3" in path or "all_users" in path:
             created_at_dt = safe_parse_created_at(record)
             if created_at_dt is None:
                 return outputs  # no createdAt; return empty list
@@ -212,9 +213,9 @@ class BlueSkyAPICARStandardizer(Standardizer):
             return outputs
 
         # ======================= CAR records: posts & actions =======================
-        if "cars" in path:
-            account_id_raw = path.split("/")[-1].replace(".jsonl", "")
-
+        if "cars" in path or "actions3" in path:
+            # account_id_raw = path.split("/")[-1].replace(".jsonl", "")
+            account_id_raw = path.split("/")[-1].replace(".json", "")
             # Refresh CID -> key mapper when DID changes
             if self.last_did != account_id_raw:
                 self.last_cid2key = get_mapper(path)
