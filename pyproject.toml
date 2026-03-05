@@ -29,7 +29,7 @@ dependencies = [
     "selenium>=4.39.0",
     "sentencepiece>=0.2.1",
     "tiktoken>=0.12.0",
-    "torch>=2.9.0",
+    "torch>=2.5.1",
     "tqdm>=4.67.1",
     "transformers>=4.57.1",
     "urlextract>=1.9.0",
@@ -43,7 +43,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-
 [project.entry-points."smdt.readers"]
 json = "smdt.io.readers.json:JsonReader"
 jsonl = "smdt.io.readers.jsonl:JsonlReader"
@@ -51,12 +50,45 @@ csv_pd = "smdt.io.readers.csv_pd:PandasCsvReader"
 zip = "smdt.io.readers.zip:ZipReader"
 tar = "smdt.io.readers.tar:TarReader"
 
-
 [project.optional-dependencies]
-# global set of enrichers
-enrichers = []
+cpu = []
+gpu = []
 
-# per-enricher groups
+# Existing optional groups
+enrichers = []
 langdetect = ["langdetect>=1.0.9"]
 textgen = ["openai>=2.6.0"]
-detoxify_toxicity = ["torch", "transformers"]
+detoxify_toxicity = ["transformers"]
+
+
+# --- UV CONFIGURATION ---
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+ 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-gpu"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+ 
+[tool.uv.sources]
+torch = [
+    # 1. High Priority: GPU (If 'gpu' extra is present, use CUDA)
+    { index = "pytorch-gpu", marker = "sys_platform == 'linux' and extra == 'gpu'" },
+    
+    # 2. CPU: Only if 'cpu' is present AND 'gpu' is NOT present
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux' and extra == 'cpu' and extra != 'gpu'" },
+
+    # 3. Fallback for Linux (No extras selected) -> Use PyPI
+    { index = "pypi", marker = "sys_platform == 'linux' and extra != 'cpu' and extra != 'gpu'" },
+
+    # 4. Mac & Windows -> Always use PyPI (Standard Wheel)
+    { index = "pypi", marker = "sys_platform != 'linux'" }
+]
