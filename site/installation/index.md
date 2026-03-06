@@ -24,11 +24,26 @@ brew services start postgresql@14
 brew link --force postgresql@14
 
 # Install Extensions
-brew tap timescale/tap
-brew install timescaledb
-timescaledb-tune --quiet --yes
+# timescaledb
+brew install cmake
+git clone https://github.com/timescale/timescaledb.git
+cd timescaledb
+git checkout 2.19.3
+./bootstrap -DPG_CONFIG=/opt/homebrew/opt/postgresql@14/bin/pg_config
+cd build && make
+make install
 
-brew install postgis
+# postgis
+brew install gdal geos proj protobuf-c json-c pkg-config pcre2
+curl -O https://download.osgeo.org/postgis/source/postgis-3.4.2.tar.gz
+tar -xvzf postgis-3.4.2.tar.gz
+cd postgis-3.4.2
+./configure --with-pgconfig=/opt/homebrew/opt/postgresql@14/bin/pg_config
+sudo mkdir -p /usr/local/bin
+sudo ln -s /opt/homebrew/opt/postgresql@14/bin/postgres /usr/local/bin/postgres
+sudo make
+sudo make install
+sudo rm /usr/local/bin/postgres
 
 # Restart Service
 brew services restart postgresql@14
