@@ -104,7 +104,7 @@ def main():
     # 2. Create an ingestion plan
     # This scans the directory for files matching the pattern
     plan = plan_directories(
-        [current_dir],
+        roots=[current_dir],
         include=("sample_twitter_v2.jsonl",),
     )
 
