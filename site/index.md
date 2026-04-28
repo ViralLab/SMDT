@@ -44,10 +44,10 @@ features:
 If you use SMDT in your research, please cite the following paper:
 
 ```bibtex
-@article{smdt2024,
+@article{smdt2026,
   title={SMDT: A Social Media Data Toolkit for Computational Social Science},
   author={Viral Lab},
-  journal={arXiv preprint arXiv:xxxx.xxxxx},
+  journal={arXiv preprint (coming soon)},
   year={2026}
 }
 ```

@@ -253,6 +253,11 @@ body {
   background-color: currentColor;
   -webkit-mask: url("/SMDT/arxiv-logo.svg") no-repeat center / contain;
   mask: url("/SMDT/arxiv-logo.svg") no-repeat center / contain;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.VPHomeHero .actions a[href*="arxiv.org"]:hover::before {
+  transform: scale(1.15) rotate(5deg);
 }
 
 /* Target only the Paper hero button */
@@ -292,6 +297,11 @@ body {
   background-color: currentColor;
   -webkit-mask: url("/SMDT/paper-logo.svg") no-repeat center / contain;
   mask: url("/SMDT/paper-logo.svg") no-repeat center / contain;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.VPHomeHero .actions a[href*="paper"]:hover::before {
+  transform: scale(1.15) rotate(-5deg);
 }
 
 /* Glassmorphism for Feature Cards */
@@ -508,21 +518,28 @@ div[class*="language-"] {
   -webkit-backdrop-filter: blur(10px);
 }
 
-/* Icon for Recipes Button (Cooking Pot) */
+/* Icon for Recipes Button (Cooking Pot) - Default Closed */
 .VPHero .actions .action:nth-child(2) .VPButton::before {
   content: "";
   display: block;
   width: 20px;
   height: 20px;
   background-color: currentColor;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='m4 8 16-4'/%3E%3Cpath d='m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.55a2 2 0 0 1 2.43 1.45l.45 1.81'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='m4 8 16-4'/%3E%3Cpath d='m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.55a2 2 0 0 1 2.43 1.45l.45 1.81'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='M3 12L5 8H19L21 12'/%3E%3Cpath d='M10 8V6a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1V8'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='M3 12L5 8H19L21 12'/%3E%3Cpath d='M10 8V6a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1V8'/%3E%3C/svg%3E");
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-size: contain;
   mask-size: contain;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Hover state: Open Pot */
+.VPHero .actions .action:nth-child(2) .VPButton:hover::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='m4 8 16-4'/%3E%3Cpath d='m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.55a2 2 0 0 1 2.43 1.45l.45 1.81'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h20'/%3E%3Cpath d='M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8'/%3E%3Cpath d='m4 8 16-4'/%3E%3Cpath d='m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.55a2 2 0 0 1 2.43 1.45l.45 1.81'/%3E%3C/svg%3E");
 }
 
 /* Dark Mode Default (Tomato) */

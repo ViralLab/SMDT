@@ -19,7 +19,7 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'Install', link: '/installation/' },
       { text: 'Recipes', link: '/recipes/' },
-      { text: 'About Us', link: '/about' }
+      { text: 'About Us', link: '/about/' }
     ],
 
     sidebar: {
@@ -71,6 +71,10 @@ export default defineConfig({
           text: 'Installation',
           items: [
             { text: 'Guide', link: '/installation/' },
+            { text: '1. Prerequisites & Database', link: '/installation/#_1-prerequisites-system-dependencies' },
+            { text: '2. Project Installation', link: '/installation/#_2-project-installation' },
+            { text: '3. Configuration', link: '/installation/#_3-configuration' },
+            { text: '4. Verify Installation', link: '/installation/#_4-verify-installation' },
           ]
         }
       ]
