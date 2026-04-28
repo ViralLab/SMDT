@@ -11,7 +11,7 @@ export default defineConfig({
   ignoreDeadLinks: true,
   markdown: {
     html: true,
-    headers: { level: [2, 3, 4] }, 
+    headers: { level: [2, 3, 4] },
   },
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
@@ -87,7 +87,7 @@ export default defineConfig({
     ]
   }
 })
- 
+
 
 
 
