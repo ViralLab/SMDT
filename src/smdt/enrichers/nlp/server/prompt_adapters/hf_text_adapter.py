@@ -30,16 +30,23 @@ class HFTextGenAdapter(LLMAdapter):
         pre += f"<User>\n{usr}\n</User>\nAssistant:"
         return pre
 
-    async def complete(self, messages: List[ChatMessage], params: GenParams) -> str:
+    async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str:
+        params = params or GenParams()
         prompt = self._collapse(messages)
+        
+        parameters = {}
+        if params.max_tokens is not None:
+            parameters["max_new_tokens"] = params.max_tokens
+        if params.temperature is not None:
+            parameters["temperature"] = params.temperature
+        if params.top_p is not None:
+            parameters["top_p"] = params.top_p
+
         payload: Dict[str, Any] = {
             "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": params.max_tokens,
-                "temperature": params.temperature,
-                "top_p": params.top_p,
-            },
         }
+        if parameters:
+            payload["parameters"] = parameters
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         async with aiohttp.ClientSession() as sess:
             async with sess.post(self.endpoint, json=payload, headers=headers) as r:

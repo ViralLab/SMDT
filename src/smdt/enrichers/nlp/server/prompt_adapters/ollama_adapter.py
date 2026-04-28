@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 try:
     import aiohttp
@@ -30,16 +30,22 @@ class OllamaAdapter(LLMAdapter):
                 out.append({"role": "assistant", "content": f"[TOOL]\n{m.content}"})
         return out
 
-    async def complete(self, messages: List[ChatMessage], params: GenParams) -> str:
+    async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str:
+        params = params or GenParams()
+        options = {}
+        if params.temperature is not None:
+            options["temperature"] = params.temperature
+        if params.max_tokens is not None:
+            options["num_predict"] = params.max_tokens
+        if params.top_p is not None:
+            options["top_p"] = params.top_p
+
         payload = {
             "model": self.model,
             "messages": self._to_ollama_messages(messages),
-            "options": {
-                "temperature": params.temperature,
-                "num_predict": params.max_tokens,
-                "top_p": params.top_p,
-            },
+            "options": options,
             "stream": False,
+            "think": params.enable_thinking,
         }
         async with aiohttp.ClientSession() as sess:
             async with sess.post(f"{self.base_url}/api/chat", json=payload) as r:

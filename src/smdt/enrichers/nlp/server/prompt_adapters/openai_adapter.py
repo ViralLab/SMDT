@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 try:
     from openai import AsyncOpenAI
@@ -24,12 +24,28 @@ class OpenAIChatAdapter(LLMAdapter):
             out.append({"role": role, "content": content})
         return out
 
-    async def complete(self, messages: List[ChatMessage], params: GenParams) -> str:
-        resp = await self.client.chat.completions.create(
-            model=self.model,
-            messages=self._to_openai_messages(messages),
-            temperature=params.temperature,
-            max_tokens=params.max_tokens,
-            top_p=params.top_p,
-        )
+    async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str:
+        params = params or GenParams()
+        kwargs = {
+            "model": self.model,
+            "messages": self._to_openai_messages(messages),
+        }
+        
+        if params.max_tokens is not None:
+            kwargs["max_tokens"] = params.max_tokens
+        if params.top_p is not None:
+            kwargs["top_p"] = params.top_p
+        if params.temperature is not None:
+            kwargs["temperature"] = params.temperature
+
+        if params.enable_thinking:
+            if self.model.startswith("o1") or self.model.startswith("o3"):
+                kwargs["reasoning_effort"] = "high"
+                if "temperature" in kwargs:
+                    del kwargs["temperature"]
+            else:
+                # OpenRouter and other compatible providers often use include_reasoning or similar
+                kwargs["extra_body"] = {"include_reasoning": True}
+
+        resp = await self.client.chat.completions.create(**kwargs)
         return (resp.choices[0].message.content or "").strip()

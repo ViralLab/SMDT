@@ -14,14 +14,15 @@ class ChatMessage:
 
 @dataclass
 class GenParams:
-    temperature: float = 0.2
-    max_tokens: int = 256
-    top_p: float = 1.0
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    enable_thinking: bool = False
 
 
 class LLMAdapter(ABC):
     @abstractmethod
-    async def complete(self, messages: List[ChatMessage], params: GenParams) -> str: ...
+    async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str: ...
 
 
 ProviderKind = Literal["openai", "anthropic", "hf-text", "ollama", "gemini"]

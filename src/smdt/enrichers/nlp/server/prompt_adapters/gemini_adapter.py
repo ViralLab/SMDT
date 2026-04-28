@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List
+from typing import List, Optional
 from google.genai.types import Candidate
 
 try:
@@ -38,20 +38,31 @@ class GeminiAdapter(LLMAdapter):
 
         return {"text": "\n\n".join(content_parts)}
 
-    async def complete(self, messages: List[ChatMessage], params: GenParams) -> str:
+    async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str:
         """Generate completion using Gemini API."""
+        params = params or GenParams()
         content = self._to_gemini_content(messages)
+
+        config = {}
+        if params.temperature is not None:
+            config["temperature"] = params.temperature
+        if params.max_tokens is not None:
+            config["max_output_tokens"] = params.max_tokens
+        if params.top_p is not None:
+            config["top_p"] = params.top_p
+
+        if params.enable_thinking:
+            budget = max(1024, params.max_tokens - 1) if params.max_tokens is not None else 1024
+            if "max_output_tokens" in config:
+                config["max_output_tokens"] = max(config["max_output_tokens"], budget + 1)
+            config["thinking_config"] = {"thinking_budget_tokens": budget}
 
         try:
             async with genai.Client(api_key=self.api_key).aio as aclient:
                 response = await aclient.models.generate_content(
                     model=self.model,
                     contents=content,
-                    config={
-                        "temperature": params.temperature,
-                        "max_output_tokens": params.max_tokens,
-                        "top_p": params.top_p,
-                    },
+                    config=config,
                 )
 
                 # Extract text from response with proper null checks

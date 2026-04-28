@@ -30,15 +30,34 @@ class AnthropicAdapter(LLMAdapter):
                 chat.append({"role": "assistant", "content": f"[TOOL]\n{m.content}"})
         return system, chat
 
-    async def complete(self, messages: List[ChatMessage], params: GenParams) -> str:
+    async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str:
+        params = params or GenParams()
         system, chat = self._split_system(messages)
-        resp = await self.client.messages.create(
-            model=self.model,
-            system=system,
-            messages=chat,
-            max_tokens=params.max_tokens,
-            temperature=params.temperature,
-            top_p=params.top_p,
-        )
+        kwargs = {
+            "model": self.model,
+            "system": system,
+            "messages": chat,
+            "max_tokens": params.max_tokens if params.max_tokens is not None else 4096,
+        }
+        
+        if params.top_p is not None:
+            kwargs["top_p"] = params.top_p
+        
+        if params.enable_thinking:
+            # Anthropic requires budget_tokens >= 1024 and max_tokens > budget_tokens
+            budget = max(1024, kwargs["max_tokens"] - 1)
+            kwargs["max_tokens"] = max(kwargs["max_tokens"], budget + 1)
+            
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": budget
+            }
+            # Anthropic requires temperature=1.0 when thinking is enabled
+            kwargs["temperature"] = 1.0
+        else:
+            if params.temperature is not None:
+                kwargs["temperature"] = params.temperature
+
+        resp = await self.client.messages.create(**kwargs)
         texts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
         return "\n".join(texts).strip()
