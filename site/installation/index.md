@@ -112,10 +112,15 @@ Once PostgreSQL is running, create the database and user, and enable the require
     :::
 
 2.  **Run SQL Setup**:
+
+    ::: warning Replace placeholders
+    Replace `smdt_user` and `'your_secure_password'` with your own chosen username and a strong password before running.
+    :::
+
     ```sql
-    -- 1. Create database and a superuser
+    -- 1. Create database and a dedicated superuser
     CREATE DATABASE smdt_db;
-    CREATE USER your_username WITH SUPERUSER PASSWORD 'your_secure_password';
+    CREATE USER smdt_user WITH SUPERUSER PASSWORD 'your_secure_password';
     GRANT ALL PRIVILEGES ON DATABASE smdt_db TO smdt_user;
 
     -- 2. Connect to the new database

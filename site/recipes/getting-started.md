@@ -56,7 +56,8 @@ import os
 # Initialize database connection
 # Note: Ensure you pass the correct database name
 db_name = os.getenv("DEFAULT_DB_NAME", "smdt_db")
-db = StandardDB(db_name)
+# set initialize=False to skip auto initialization if you already initialized the database
+db = StandardDB(db_name, initialize=False) 
 
 try:
     # Check connection
@@ -70,6 +71,9 @@ except Exception as e:
 
 ## Next Steps
 
-Explore the API documentation for more details on:
-- [Standardizers](../api/standardizers/smdt.standardizers.base.md)
-- [Database Models](../api/store/smdt.store.standard_db.md)
+Now that you can connect to the database and run a standardizer, learn how to scale up to thousands of files:
+
+- **[Using Ingestion Pipelines](./using-pipelines.md)**  
+  Process entire directories of JSON/JSONL files in batches with checkpointing.
+- **[Standardizing Twitter API v2 Data](./standardizing-twitter-v2.md)**  
+  A complete end-to-end example from data generation to database insertion.

@@ -22,7 +22,7 @@ from pathlib import Path
 from smdt.store.standard_db import StandardDB
 from smdt.ingest.plan import plan_directories
 from smdt.ingest.pipeline import run_pipeline, PipelineConfig
-from my_project.standardizers import MyStandardizer
+from smdt.standardizers import TwitterV2Standardizer
 
 # Configure logging to see progress and errors
 logging.basicConfig(level=logging.INFO)
@@ -32,37 +32,32 @@ def main():
     # Note: Replace 'smdt_db' with your actual database name
     db = StandardDB("smdt_db")
     
-    try:
-        # 2. Initialize your standardizer
-        standardizer = MyStandardizer()
-        
-        # 3. Create an ingestion plan
-        # Scans 'data/raw' for all files ending in .jsonl (recursively)
-        plan = plan_directories(
-            roots=["data/raw"],
-            include=["*.jsonl"]
-        )
-        
-        print(f"Found {len(plan.files)} files to process.")
-        
-        # 4. Configure pipeline settings (optional)
-        config = PipelineConfig(
-            batch_size=1000,       # Records per batch
-            chunk_size=50000,      # DB insert chunk size
-            checkpoint_file=".pipeline_checkpoint" # Save progress here
-        )
-        
-        # 5. Run the pipeline
-        run_pipeline(
-            plan=plan,
-            db=db,
-            standardizer=standardizer,
-            config=config
-        )
-        
-    finally:
-        # Always close the connection
-        conn.close()
+    # 2. Initialize your standardizer
+    standardizer = TwitterV2Standardizer()
+    
+    # 3. Create an ingestion plan
+    # Scans 'data/raw' for all files ending in .jsonl (recursively)
+    plan = plan_directories(
+        roots=["data/raw"],
+        include=["*.jsonl"]
+    )
+    
+    print(f"Found {len(plan.files)} files to process.")
+    
+    # 4. Configure pipeline settings (optional)
+    config = PipelineConfig(
+        batch_size=1000,       # Records per batch
+        chunk_size=50000,      # DB insert chunk size
+        checkpoint_file=".pipeline_checkpoint" # Save progress here
+    )
+    
+    # 5. Run the pipeline
+    run_pipeline(
+        plan=plan,
+        db=db,
+        standardizer=standardizer,
+        config=config
+    )
 
 if __name__ == "__main__":
     main()

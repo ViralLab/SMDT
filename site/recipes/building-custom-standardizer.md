@@ -6,69 +6,72 @@ This recipe guides you through creating a custom standardizer to ingest data fro
 
 All standardizers in SMDT inherit from the base `Standardizer` class. Your job is to implement the `standardize` method, which takes a raw record and converts it into a list of database models (like `Accounts`, `Posts`, `Actions`, etc.).
 
-## 1. Create the Custom Standardizer Class
+Once your standardizer is defined, you can plug it directly into the standard SMDT ingestion pipeline, and it will handle the reading, batching, and database insertion automatically.
 
-Let's imagine we have a CSV file with the following columns:
-`user_id, username, tweet_text, timestamp, likes`
+## End-to-End Example
 
-We want to map this to our `Accounts` and `Posts` tables.
+Below is a complete, runnable script. It defines a custom standardizer for a hypothetical CSV format, generates a dummy CSV file, and then runs the full SMDT pipeline to ingest the data into a database.
 
-Create a file named `my_custom_standardizer.py`:
+Create a file named `custom_ingestion.py` and run it:
 
 ```python
+import os
+import csv
 from datetime import datetime, timezone
-from typing import Any, List, Tuple
+from typing import Any, Iterable, Tuple
+
 from smdt.standardizers.base import Standardizer, SourceInfo
 from smdt.store.models import Accounts, Posts
+from smdt.store.standard_db import StandardDB
+from smdt.ingest.plan import plan_directories
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.io.readers import discover
 
-class MyCustomStandardizer(Standardizer):
+# ---------------------------------------------------------
+# 1. Define the Custom Standardizer
+# ---------------------------------------------------------
+class MyCustomCSVStandardizer(Standardizer):
     """
-    A custom standardizer for my specific CSV format.
+    A custom standardizer that maps our specific CSV columns 
+    (user_id, username, tweet_text, timestamp, likes) to SMDT models.
     """
-    name = "my_custom_standardizer"
+    name = "my_custom_csv_standardizer"
 
     def standardize(
         self, input_record: Tuple[dict, SourceInfo]
-    ) -> List[Any]:
-        """
-        Transforms a raw dictionary (from CSV row) into SMDT models.
-        """
-        record, source_info = input_record
+    ) -> Iterable[Any]:
         
+        record, source_info = input_record
         output_models = []
 
-        # 1. Extract and Clean Data
+        # Extract data from the CSV row (which is passed as a dictionary)
         user_id = record.get("user_id")
         username = record.get("username")
         body = record.get("tweet_text")
-        # Generate a post_id if your data doesn't have one (e.g., using hash or if provided)
-        # For this example, let's assume we don't have a post_id, so we skip creating the Post
-        # or we could generate one. Let's assume we generate a dummy one for the example.
+        
+        # We generate a unique post_id since our CSV doesn't have one
         post_id = f"{user_id}_{record.get('timestamp')}" 
 
-        # 2. Parse Timestamps
-        # Ensure dates are timezone-aware (UTC)
+        # Parse the timestamp into a timezone-aware UTC datetime
         try:
-            # Assuming format "2023-10-27 10:00:00"
             dt_str = record.get("timestamp")
             created_at = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
             created_at = created_at.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
-            # If date is invalid, we might skip this record or use a default
+            # Skip records with invalid dates
             return []
 
-        # 3. Create Account Model
-        # We assume the record contains up-to-date user info
+        # Create the Account model
         account = Accounts(
             account_id=user_id,
             username=username,
-            created_at=created_at, # Using post time as proxy if user creation time isn't available
-            profile_name=username, # Fallback
+            created_at=created_at, 
+            profile_name=username, 
             retrieved_at=datetime.now(timezone.utc)
         )
         output_models.append(account)
 
-        # 4. Create Post Model
+        # Create the Post model
         post = Posts(
             post_id=post_id,
             account_id=user_id,
@@ -80,75 +83,64 @@ class MyCustomStandardizer(Standardizer):
         output_models.append(post)
 
         return output_models
+
+# ---------------------------------------------------------
+# 2. Setup and Run the Pipeline
+# ---------------------------------------------------------
+def main():
+    # Ensure SMDT knows how to read various file formats (like CSV)
+    discover()
+
+    # Create a dummy CSV file for this example
+    csv_filename = "custom_data.csv"
+    with open(csv_filename, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["user_id", "username", "tweet_text", "timestamp", "likes"])
+        writer.writerow(["u123", "alice", "Hello Custom World!", "2023-10-27 10:00:00", "5"])
+        writer.writerow(["u456", "bob", "SMDT is flexible", "2023-10-27 11:30:00", "10"])
+
+    print(f"Generated sample data: {csv_filename}")
+
+    # Initialize the Database
+    # initialize=True creates the necessary tables if they don't exist
+    db = StandardDB("custom_smdt_db", initialize=True)
+
+    # Initialize our Custom Standardizer
+    standardizer = MyCustomCSVStandardizer()
+
+    # Create an ingestion plan targeting our CSV file
+    current_dir = os.path.dirname(os.path.abspath(__file__)) or "."
+    plan = plan_directories(
+        roots=[current_dir],
+        include=[csv_filename]
+    )
+
+    print(f"Found {len(plan.files)} file(s) to process. Starting ingestion...")
+
+    # Run the pipeline
+    run_pipeline(
+        plan=plan,
+        db=db,
+        standardizer=standardizer,
+        config=PipelineConfig(
+            batch_size=100,
+            # We use DO NOTHING to prevent errors if we run the script multiple times
+            on_conflict={
+                Accounts: "DO NOTHING",
+                Posts: "DO NOTHING"
+            }
+        )
+    )
+
+    print("Ingestion complete! Check your database.")
+
+if __name__ == "__main__":
+    main()
 ```
 
-## 2. Use the Standardizer in a Script
+## How It Works
 
-Now you can use this standardizer in a script to process your CSV file.
-
-Create a file named `run_custom_import.py`:
-
-```python
-import csv
-from smdt.store.standard_db import StandardDB
-from smdt.standardizers.base import SourceInfo
-from my_custom_standardizer import MyCustomStandardizer
-
-# 1. Initialize Database
-db = StandardDB("my_custom_db", initialize=True)
-
-# 2. Initialize Standardizer
-std = MyCustomStandardizer()
-
-# 3. Process File
-csv_file = "data.csv"
-
-# Create a dummy CSV for this recipe
-with open(csv_file, "w") as f:
-    f.write("user_id,username,tweet_text,timestamp,likes\n")
-    f.write("u123,alice,Hello World!,2023-10-27 10:00:00,5\n")
-    f.write("u456,bob,SMDT is cool,2023-10-27 11:30:00,10\n")
-
-print("Importing data...")
-
-with open(csv_file, "r") as f:
-    reader = csv.DictReader(f)
-    for i, row in enumerate(reader):
-        source_info = SourceInfo(path=csv_file, line_number=i+1)
-        
-        # Standardize
-        models = std.standardize((row, source_info))
-        
-        # Insert into Database
-        # Note: In a real pipeline, you'd batch these insertions using db.copy_records()
-        # for better performance. Here we just print them.
-        for model in models:
-            print(f"Generated: {type(model).__name__} -> {model}")
-
-print("Done!")
-```
-
-## 3. Advanced: Using with the Pipeline
-
-To use your custom standardizer with the robust `smdt.ingest.pipeline` system, you just need to pass an instance of it to `run_pipeline`.
-
-```python
-from smdt.ingest.plan import plan_directories
-from smdt.ingest.pipeline import run_pipeline, PipelineConfig
-from smdt.store.standard_db import StandardDB
-from my_custom_standardizer import MyCustomStandardizer
-
-# ... set up plan ...
-# plan = plan_directories(...)
-
-# ... set up db ...
-# db = StandardDB(...)
-
-# ... run pipeline ...
-# run_pipeline(
-#     plan,
-#     db,
-#     MyCustomStandardizer(), # <--- Your custom standardizer here
-#     config=PipelineConfig(...)
-# )
-```
+1. **`standardize()` Method**: The pipeline reads the file (e.g., via the built-in CSV reader) and passes each row to your standardizer as a dictionary. 
+2. **Data Extraction**: You extract the fields, parse strings into proper `datetime` objects, and handle missing data.
+3. **Model Instantiation**: You instantiate SMDT models (`Accounts`, `Posts`) and return them in a list.
+4. **Pipeline Execution**: The `run_pipeline` function takes care of batching your returned models, deduplicating them, and safely inserting them into the PostgreSQL database using `StandardDB`.

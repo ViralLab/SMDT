@@ -22,7 +22,7 @@ const members = [
     org: 'Sabanci University',
     links: [
       { icon: googleScholar, link: 'https://scholar.google.com/citations?user=c9QdS-sAAAAJ&hl=en&oi=ao' },
-      { icon: website, link:  'https:/najafi-ali.com' },
+      { icon: website, link: 'https://najafi-ali.com' },
       { icon: 'linkedin', link: 'https://www.linkedin.com/in/najafi-ali1998' },
       { icon: 'github', link: 'https://github.com/AliNajafi1998' },
     ]

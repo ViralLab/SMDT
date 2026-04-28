@@ -112,7 +112,7 @@ def main():
 
     # 3. Initialize Database Connection
     # The 'initialize=True' flag ensures schemas are created if they don't exist
-    db = StandardDB("*twitter_v2_sample", initialize=True)
+    db = StandardDB("twitter_v2_sample", initialize=True)
 
     # 4. Initialize Standardizer
     standardizer = TwitterV2Standardizer()
