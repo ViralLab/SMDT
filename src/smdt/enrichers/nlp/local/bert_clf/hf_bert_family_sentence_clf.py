@@ -41,6 +41,7 @@ class BERTSentenceClfConfig:
 
     # HF Model overrides
     hf_model_id: Optional[str] = None
+    hf_peft_adapter_id: Optional[str] = None
     hf_tokenizer_id: Optional[str] = None
     model_name: str = "generic_classifier"
     is_multilabel: bool = False
@@ -129,6 +130,13 @@ class BERTSentenceClfEnricher(BaseEnricher):
         tok_id = self.cfg.hf_tokenizer_id or self.cfg.hf_model_id
         self.tokenizer = AutoTokenizer.from_pretrained(tok_id, use_fast=True)
         model = AutoModelForSequenceClassification.from_pretrained(self.cfg.hf_model_id)
+
+        if self.cfg.hf_peft_adapter_id:
+            try:
+                from peft import PeftModel
+                model = PeftModel.from_pretrained(model, self.cfg.hf_peft_adapter_id)
+            except ImportError as e:
+                raise ImportError("The 'peft' package is required to load PEFT/LoRA adapters.") from e
 
         if (
             torch.cuda.is_available()
