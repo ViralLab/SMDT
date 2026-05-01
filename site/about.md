@@ -66,8 +66,6 @@ const members = [
 
 # About Us
 
-SMDT (Social Media Data Toolkit) is developed by the Viral Lab.
-
 
 
 ## The Team
