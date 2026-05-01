@@ -17,7 +17,7 @@ hero:
       target: _blank
     - theme: alt
       text: arXiv
-      link: https://arxiv.org/abs/xxxx.xxxxx
+      link: https://arxiv.org/pdf/2604.27710
       target: _blank
 
 features:
@@ -45,9 +45,9 @@ If you use SMDT in your research, please cite the following paper:
 
 ```bibtex
 @article{smdt2026,
-  title={SMDT: A Social Media Data Toolkit for Computational Social Science},
-  author={Viral Lab},
-  journal={arXiv preprint (coming soon)},
+  title={Social Media Data Toolkit: Standardization and Anonymization of Social Network Datasets},
+  author={Najafi, Ali and Iannucci, Letizia and Kivelä, Mikko and Varol, Onur},
+  journal={arXiv preprint arXiv:2604.27710},
   year={2026}
 }
 ```
