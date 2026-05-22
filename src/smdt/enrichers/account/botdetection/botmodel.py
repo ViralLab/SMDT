@@ -17,7 +17,7 @@ from smdt.enrichers.registry import register
 from smdt.store.models.account_enrichments import AccountEnrichments
 from smdt.store.standard_db import StandardDB
 
-_MODEL_ID = "botometer_v1"
+_MODEL_ID = "bot_detection"
 
 
 @dataclass
@@ -50,7 +50,7 @@ class BotometerConfig:
 @register(
     _MODEL_ID,
     target="accounts",
-    description="Botometer-style bot detection score for accounts",
+    description="Bot detection score for accounts",
     requires=["numpy", "dateutil"],
 )
 class BotometerEnricher(BaseEnricher):
