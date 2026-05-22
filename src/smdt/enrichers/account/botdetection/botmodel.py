@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import pickle
 import time
 from dataclasses import dataclass
@@ -24,8 +25,15 @@ class BotometerConfig:
     only_missing: bool = True
     reset_cache: bool = False
     cache_dir: Optional[str] = None
-    # Path to model.pkl.gz; defaults to model.pkl.gz next to this file
-    model_path: Optional[str] = None
+    model_path: Optional[str] = None  # defaults to model.pkl.gz next to this file
+    do_save_to_db: bool = True
+    output_dir: Optional[str] = None  # required when do_save_to_db=False
+
+    def __post_init__(self) -> None:
+        if not self.do_save_to_db:
+            if not self.output_dir:
+                raise ValueError("output_dir is required when do_save_to_db=False")
+            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
 
 
 @register(
@@ -281,4 +289,27 @@ class BotometerEnricher(BaseEnricher):
     def save_results(self, results: List[AccountEnrichments]) -> None:
         if not results:
             return
-        self.db.insert_with_fallbacks(results)
+
+        if self.cfg.do_save_to_db:
+            self.db.insert_with_fallbacks(results)
+            return
+
+        output_base = Path(self.cfg.output_dir)
+        open_files: Dict[str, Any] = {}
+        try:
+            for r in results:
+                date_str = r.created_at.strftime("%Y-%m-%d")
+                if date_str not in open_files:
+                    outp = output_base / f"{self.MODEL_ID}_{date_str}.jsonl"
+                    open_files[date_str] = outp.open("a", encoding="utf-8")
+                rec = {
+                    "account_id": r.account_id,
+                    "model_id": r.model_id,
+                    "body": r.body,
+                    "created_at": r.created_at.isoformat(),
+                    "retrieved_at": r.retrieved_at.isoformat() if r.retrieved_at else None,
+                }
+                open_files[date_str].write(json.dumps(rec, ensure_ascii=False) + "\n")
+        finally:
+            for f in open_files.values():
+                f.close()
