@@ -24,40 +24,55 @@ from smdt.enrichers.post.nlp.server.prompt_template import PromptTemplate
 
 @dataclass
 class TextGenConfig:
-    # --- Required first (dataclass rule) ---
-    model_id_postfix: str  # becomes part of post_enrichments.model_id
-    chat_model_id: str  # model name served by vLLM/OpenAI
-    base_url: str  # OpenAI-compatible endpoint
+    """Configuration for TextGenEnricher.
 
-    # --- Provider/adapters ---
-    provider_kind: str = (
-        "openai"  # "openai", "anthropic", "hf-text", "ollama", "gemini"
-    )
+    Attributes:
+        model_id_postfix: Suffix appended to form the ``post_enrichments.model_id`` key.
+        chat_model_id: Model name as served by the vLLM/OpenAI endpoint.
+        base_url: OpenAI-compatible endpoint URL.
+        provider_kind: Adapter type — one of ``"openai"``, ``"anthropic"``,
+            ``"hf-text"``, ``"ollama"``, ``"gemini"``.
+        provider_model: Model name override for the provider (defaults to ``chat_model_id``).
+        prompt_path: Path to a YAML/JSON file containing prompt templates.
+        prompt_id: ID of the prompt template to use from ``prompt_path``.
+        extra_vars: Additional variables injected into the prompt template.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
+        output_dir: Required when ``do_save_to_db=False``.
+        api_key: API key for authenticated endpoints.
+        system_prompt: System message prepended to every request.
+        user_template: Format-string template for the user message; receives ``{body}``.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens in the generated response (``None`` = model default).
+        top_p: Nucleus sampling probability mass.
+        batch_size: Number of rows fetched from the DB per iteration.
+        max_input_chars: Hard cap on input text length to avoid huge prompts.
+        requests_per_minute: Client-side request throttle (approximate).
+        only_missing: Skip posts that already have an enrichment for this model.
+        reset_cache: Clear the local cache of processed post IDs before running.
+        cache_dir: Directory for the local cache file.
+    """
+    model_id_postfix: str
+    chat_model_id: str
+    base_url: str
+    provider_kind: str = "openai"
     provider_model: Optional[str] = None
-    prompt_path: Optional[str] = None  # YAML/JSON file
+    prompt_path: Optional[str] = None
     prompt_id: Optional[str] = None
     extra_vars: Optional[Dict[str, Any]] = None
-
-    # --- Destination ---
-    do_save_to_db: bool = True  # False → write to JSONL
-    output_dir: Optional[str] = None  # required if do_save_to_db=False
-
-    # --- Auth & request ---
+    do_save_to_db: bool = True
+    output_dir: Optional[str] = None
     api_key: str = ""
     system_prompt: str = "You are a helpful assistant."
     user_template: str = "Summarize the following post in one sentence:\n\n{body}"
     temperature: float = 0.2
     max_tokens: int | None = None
     top_p: float = 1.0
-
-    # --- Runner / batching knobs ---
-    batch_size: int = 32  # DB fetch page size
-    max_input_chars: int = 8_000  # crude guard; avoids huge prompts
-    requests_per_minute: int = 120  # client-side throttle (approximate)
-    only_missing: bool = True  # Process only posts that haven't been enriched yet
-
+    batch_size: int = 32
+    max_input_chars: int = 8_000
+    requests_per_minute: int = 120
+    only_missing: bool = True
     reset_cache: bool = False
-    cache_dir: Optional[str] = None  # optional
+    cache_dir: Optional[str] = None
 
     # internal
     _prompt: Optional[PromptTemplate] = None
@@ -113,6 +128,15 @@ class TextGenConfig:
     requires=[],  # no hard dependency on 'openai' here
 )
 class TextGenEnricher(BaseEnricher):
+    """Enriches post bodies with LLM-generated text via provider adapters.
+
+    Supports OpenAI-compatible endpoints, Anthropic, Hugging Face text-generation,
+    Ollama, and Gemini. Runs async batched requests with client-side rate limiting.
+
+    - ``model_id`` format: ``"textgen_<model_id_postfix>"``
+    - JSONB payload: ``{"response": str, "model": str, "provider": str}``
+    """
+
     TARGET = "posts"
     ENRICHER_ID_BASE = "textgen"
 

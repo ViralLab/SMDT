@@ -8,12 +8,26 @@ Role = Literal["system", "user", "assistant", "tool"]
 
 @dataclass
 class ChatMessage:
+    """A single message in a chat conversation.
+
+    Attributes:
+        role: Speaker role — one of ``"system"``, ``"user"``, ``"assistant"``, ``"tool"``.
+        content: Text content of the message.
+    """
     role: Role
     content: str
 
 
 @dataclass
 class GenParams:
+    """Inference parameters passed to an LLM adapter.
+
+    Attributes:
+        temperature: Sampling temperature (``None`` uses the model default).
+        max_tokens: Maximum tokens to generate (``None`` uses the model default).
+        top_p: Nucleus sampling probability mass (``None`` uses the model default).
+        enable_thinking: Enable extended thinking / chain-of-thought if supported.
+    """
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
@@ -21,6 +35,12 @@ class GenParams:
 
 
 class LLMAdapter(ABC):
+    """Abstract base class for LLM provider adapters.
+
+    Implement ``complete`` to wrap any chat-completion API
+    (OpenAI-compatible, Anthropic, Ollama, Gemini, etc.).
+    """
+
     @abstractmethod
     async def complete(self, messages: List[ChatMessage], params: Optional[GenParams] = None) -> str: ...
 
@@ -30,11 +50,21 @@ ProviderKind = Literal["openai", "anthropic", "hf-text", "ollama", "gemini"]
 
 @dataclass
 class ProviderConfig:
+    """Connection configuration for an LLM provider.
+
+    Attributes:
+        kind: Provider type — one of ``"openai"``, ``"anthropic"``,
+            ``"hf-text"``, ``"ollama"``, ``"gemini"``.
+        model: Model name or ID as recognised by the provider.
+        base_url: Base URL for OpenAI-compatible or Ollama endpoints.
+        api_key: API key for authenticated providers.
+        endpoint: Single-prompt endpoint URL (used by ``"hf-text"`` adapters).
+    """
     kind: ProviderKind
     model: str
     base_url: Optional[str] = None
     api_key: Optional[str] = None
-    endpoint: Optional[str] = None  # for hf-text single-prompt endpoints
+    endpoint: Optional[str] = None
 
 
 def make_adapter(cfg: "ProviderConfig") -> LLMAdapter:

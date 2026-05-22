@@ -14,16 +14,20 @@ from smdt.store.standard_db import StandardDB
 
 @dataclass
 class LanguageDetectionConfig:
-    # required
+    """Configuration for LanguageDetectionEnricher.
+
+    Attributes:
+        model_id_postfix: Suffix appended to form the ``post_enrichments.model_id`` key.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
+        output_dir: Required when ``do_save_to_db=False``.
+        reset_cache: Clear the local cache of processed post IDs before running.
+        cache_dir: Directory for the local cache file.
+    """
     model_id_postfix: str
-
     do_save_to_db: bool
-
-    # destination
-    output_dir: Optional[str] = None  # required if do_save_to_db == False
-
+    output_dir: Optional[str] = None
     reset_cache: bool = False
-    cache_dir: Optional[str] = None  # optional
+    cache_dir: Optional[str] = None
 
     def __post_init__(self) -> None:
         self.model_id_postfix = (self.model_id_postfix or "").strip()
@@ -50,11 +54,10 @@ class LanguageDetectionConfig:
     requires=["langdetect"],  # soft dependency check
 )
 class LanguageDetectionEnricher(BaseEnricher):
-    """
-    Detect languages for post bodies and store:
-      table: post_enrichments
-      uniqueness: (post_id, model_id)
-      payload example: {"langs": [{"lang":"en","prob":0.999}], "len": 123}
+    """Detects the language of post bodies using ``langdetect``.
+
+    - ``model_id`` format: ``"langdetect_<model_id_postfix>"``
+    - JSONB payload: ``{"langs": [{"lang": "en", "prob": 0.999}, ...], "len": 123}``
     """
 
     TARGET = "posts"

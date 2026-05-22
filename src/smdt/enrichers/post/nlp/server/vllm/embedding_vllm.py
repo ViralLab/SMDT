@@ -15,21 +15,28 @@ from smdt.store.standard_db import StandardDB
 
 @dataclass
 class VLLMEmbeddingConfig:
-    # required
+    """Configuration for VLLMEmbeddingEnricher.
+
+    Attributes:
+        embedding_model_id: Hugging Face model ID or path for the embedding model.
+        model_id_postfix: Suffix appended to form the ``post_enrichments.model_id`` key.
+        base_url: Base URL of the vLLM-compatible embeddings API.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
+        output_dir: Required when ``do_save_to_db=False``.
+        api_key: API key for authenticated endpoints (empty string if not needed).
+        batch_size: Number of texts per embeddings API call.
+        reset_cache: Clear the local cache of processed post IDs before running.
+        cache_dir: Directory for the local cache file.
+    """
     embedding_model_id: str
     model_id_postfix: str
     base_url: str
     do_save_to_db: bool
-
-    # destination
-    output_dir: Optional[str] = None  # required if do_save_to_db == False
-
-    # optional
+    output_dir: Optional[str] = None
     api_key: str = ""
-    batch_size: int = 1024  # texts per embeddings API call
-
+    batch_size: int = 1024
     reset_cache: bool = False
-    cache_dir: Optional[str] = None  # optional
+    cache_dir: Optional[str] = None
 
     def __post_init__(self) -> None:
         self.model_id_postfix = (self.model_id_postfix or "").strip()
@@ -65,9 +72,13 @@ class VLLMEmbeddingConfig:
     requires=["openai"],
 )
 class VLLMClientEnricher(BaseEnricher):
-    """
-    Enricher that batches post bodies and requests embeddings from a vLLM-compatible
-    OpenAI API server (using openai>=1 client with custom base_url).
+    """Computes text embeddings for post bodies via a vLLM-compatible OpenAI API server.
+
+    Uses the ``openai>=1`` client with a custom ``base_url`` to call the embeddings
+    endpoint in batches.
+
+    - ``model_id`` format: ``"vllm_embedding_<model_id_postfix>"``
+    - JSONB payload: ``{"embedding": [float, ...], "model": str}``
     """
 
     TARGET = "posts"

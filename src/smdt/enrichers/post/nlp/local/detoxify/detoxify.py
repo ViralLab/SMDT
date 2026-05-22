@@ -26,29 +26,33 @@ except ImportError as e:
 # ----------------------- Config -----------------------
 @dataclass
 class DetoxifyConfig:
-    # Required-ish
-    model_name: str = (
-        "multilingual"  # one of: original, unbiased, multilingual, original-small, unbiased-small
-    )
+    """Configuration for DetoxifyToxicityEnricher.
 
-    # Inference knobs
-    model_batch_size: int = 8  # per-forward-pass size
-    max_seq_len: int = 256  # tokenizer truncation
-    device: Optional[str] = None  # "cuda" | "cpu" | None(auto)
-
-    # Runner/selector knobs
-    only_missing: bool = True  # process only posts missing our model_id
-
-    # Persistence
-    do_save_to_db: bool = True  # False → write to JSONL
-    output_dir: Optional[str] = None  # required if do_save_to_db=False
-
-    # Optional: local HF id / path overrides (advanced)
-    hf_model_id: Optional[str] = None  # e.g. "unitary/toxic-bert"
-    hf_tokenizer_id: Optional[str] = None  # tokenizer override
-
+    Attributes:
+        model_name: Detoxify variant. One of: ``original``, ``unbiased``,
+            ``multilingual``, ``original-small``, ``unbiased-small``.
+        model_batch_size: Number of texts per forward pass.
+        max_seq_len: Tokenizer truncation length.
+        device: Inference device — ``"cuda"``, ``"cpu"``, or ``None`` (auto-detect).
+        only_missing: Skip posts that already have an enrichment for this model.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
+        output_dir: Required when ``do_save_to_db=False``.
+        hf_model_id: Override the Hugging Face model checkpoint (advanced).
+        hf_tokenizer_id: Override the Hugging Face tokenizer (advanced).
+        reset_cache: Clear the local cache of processed post IDs before running.
+        cache_dir: Directory for the local cache file.
+    """
+    model_name: str = "multilingual"
+    model_batch_size: int = 8
+    max_seq_len: int = 256
+    device: Optional[str] = None
+    only_missing: bool = True
+    do_save_to_db: bool = True
+    output_dir: Optional[str] = None
+    hf_model_id: Optional[str] = None
+    hf_tokenizer_id: Optional[str] = None
     reset_cache: bool = False
-    cache_dir: Optional[str] = None  # optional
+    cache_dir: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.model_batch_size <= 0:
@@ -80,10 +84,10 @@ class DetoxifyConfig:
     requires=["torch", "transformers"],  # soft dep check
 )
 class DetoxifyToxicityEnricher(BaseEnricher):
-    """
-    Scores post text with a Detoxify variant and writes to post_enrichments.
-    - MODEL_ID format: "toxicity_<model_name>"
-    - JSONB payload: {"scores": {label: prob, ...}, "vendor": "detoxify", "model_name": "..."}
+    """Scores post text for toxicity using a Detoxify transformer checkpoint.
+
+    - ``model_id`` format: ``"toxicity_<model_name>"``
+    - JSONB payload: ``{"scores": {label: float, ...}, "logits": {label: float, ...}, "vendor": "detoxify", "model_name": str}``
     """
 
     TARGET = "posts"

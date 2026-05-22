@@ -22,12 +22,23 @@ _MODEL_ID = "botometer_v1"
 
 @dataclass
 class BotometerConfig:
+    """Configuration for BotometerEnricher.
+
+    Attributes:
+        only_missing: Skip accounts that already have an enrichment for this model.
+        reset_cache: Clear the local cache of processed account IDs before running.
+        cache_dir: Directory for the local cache file.
+        model_path: Path to the pickled model file. Defaults to ``model.pkl.gz``
+            in the same directory as this module.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
+        output_dir: Required when ``do_save_to_db=False``.
+    """
     only_missing: bool = True
     reset_cache: bool = False
     cache_dir: Optional[str] = None
-    model_path: Optional[str] = None  # defaults to model.pkl.gz next to this file
+    model_path: Optional[str] = None
     do_save_to_db: bool = True
-    output_dir: Optional[str] = None  # required when do_save_to_db=False
+    output_dir: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.do_save_to_db:

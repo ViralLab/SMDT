@@ -5,13 +5,22 @@ from typing import Optional, Mapping, Any, Tuple, List
 
 @dataclass(frozen=True, eq=True)
 class Accounts:
-    """
-    Python model for `accounts` table.
+    """Python model for the ``accounts`` table.
 
-    Notes:
-      - `location` maps to Postgres `point`. Pass as string "(lon,lat)" (lon=x, lat=y).
-      - `username` is the handle/username; `profile_name` is the display name.
-      - `created_at` is required (TIMESTAMPTZ NOT NULL); if naive, coerced to UTC.
+    Attributes:
+        created_at: Account creation timestamp (tz-aware; naive datetimes coerced to UTC).
+        id: Internal database primary key.
+        account_id: Platform-specific account identifier.
+        username: Handle/username.
+        profile_name: Display name.
+        bio: Profile biography text.
+        location: Geographic location as Postgres ``point`` literal ``"(lon,lat)"``.
+        post_count: Number of posts authored (must be >= 0).
+        friend_count: Number of accounts followed (must be >= 0).
+        follower_count: Number of followers (must be >= 0).
+        is_verified: Whether the account has a platform verification badge.
+        profile_image_url: URL of the account's profile image.
+        retrieved_at: Timestamp when the record was retrieved.
     """
 
     # NOT NULL first (dataclasses require non-defaults before defaults)
@@ -20,10 +29,10 @@ class Accounts:
     # Optionals
     id: Optional[int] = None
     account_id: Optional[str] = None
-    username: Optional[str] = None  # ← matches schema
+    username: Optional[str] = None
     profile_name: Optional[str] = None
     bio: Optional[str] = None
-    location: Optional[str] = None  # Postgres point → "(lon,lat)" string or None
+    location: Optional[str] = None
     post_count: Optional[int] = None
     friend_count: Optional[int] = None
     follower_count: Optional[int] = None
@@ -33,7 +42,7 @@ class Accounts:
 
     # Metadata for StandardDB fallback
     __table_name__ = "accounts"
-    __jsonb_fields__ = set()  # no JSONB columns here
+    __jsonb_fields__ = set()
 
     # -------- Validation / normalization --------
     def __post_init__(self):

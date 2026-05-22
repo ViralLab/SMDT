@@ -12,9 +12,7 @@ except ImportError:
 
 
 class CommunityType(StrEnum):
-    """
-    Enumeration of community types.
-    """
+    """Community types (``CHANNEL`` or ``GROUP``)."""
 
     CHANNEL = "CHANNEL"
     GROUP = "GROUP"
@@ -22,8 +20,22 @@ class CommunityType(StrEnum):
 
 @dataclass(frozen=True, eq=True)
 class Communities:
-    """
-    Python model for `communities` table.
+    """Python model for the ``communities`` table.
+
+    Attributes:
+        created_at: Community creation timestamp (tz-aware; naive datetimes coerced to UTC).
+        community_type: Type — one of ``"CHANNEL"``, ``"GROUP"``.
+        id: Internal database primary key.
+        community_id: Platform-specific community identifier.
+        community_username: Handle/username of the community.
+        community_name: Display name of the community.
+        bio: Community description/biography.
+        is_public: Whether the community is publicly accessible.
+        member_count: Number of members (must be >= 0).
+        post_count: Number of posts in the community (must be >= 0).
+        owner_account_id: Account ID of the community owner.
+        profile_image_url: URL of the community's profile image.
+        retrieved_at: Timestamp when the record was retrieved.
     """
 
     # NOT NULL first (dataclasses require non-defaults before defaults)
@@ -45,7 +57,7 @@ class Communities:
 
     # Metadata for StandardDB fallback
     __table_name__ = "communities"
-    __jsonb_fields__ = set()  # no JSONB columns here
+    __jsonb_fields__ = set()
 
     # -------- Validation / normalization --------
     def __post_init__(self):

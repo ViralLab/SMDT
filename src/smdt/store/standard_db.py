@@ -57,11 +57,14 @@ def _ident(name: str) -> sql.Identifier:
 
 
 class StandardDB:
-    """
-    Helper for creating databases, managing schemas, and bulk inserts.
-    DBConfig fields referenced:
-      - default_dbname, user, password, host, port, application_name, connect_timeout
-      - owner (schema), template, standard_schema_path
+    """PostgreSQL helper for database lifecycle management and bulk inserts.
+
+    Wraps psycopg3 to handle database creation, schema application, and
+    three-tier bulk insert fallback: COPY → multi-VALUES → row-by-row SAVEPOINT.
+
+    Reads connection parameters from a ``DBConfig`` instance (``user``, ``password``,
+    ``host``, ``port``, ``application_name``, ``connect_timeout``) and schema options
+    (``owner``, ``template``, ``standard_schema_path``).
     """
 
     def __init__(

@@ -127,8 +127,9 @@ if (cur) sections.push(cur);
 // strip anchor-only lines and add page frontmatter + H1
 for (const s of sections) {
   let body = s.body.join('\n').replace(/^\s*<a id="[^"]+"><\/a>\s*\n?/gm, '');
-  // Ensure H1 stays first line (already there), but add frontmatter with a nice title
   const pageTitle = cleanTitle(s.name);
+  // Replace raw module-path H1 with the clean title
+  body = body.replace(/^#\s+.+$/m, `# ${pageTitle}`);
   const front = `---\ntitle: ${pageTitle}\noutline: deep\n---\n\n`;
   s.text = pageTitle;
   s.body = front + body;
@@ -215,7 +216,6 @@ function buildTree(items, groupName) {
         if (!folder) {
           folder = {
             text: folderName,
-            collapsed: true,
             items: []
           };
           currentLevel.push(folder);

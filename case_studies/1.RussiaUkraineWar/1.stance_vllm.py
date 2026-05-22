@@ -1,6 +1,6 @@
 from smdt.store.standard_db import StandardDB
 from smdt.enrichers.runner import run_enricher
-from smdt.enrichers.nlp.server.textgen.textgen import TextGenEnricher
+from smdt.enrichers.post.nlp.server.textgen.textgen import TextGenEnricher
 
 
 system_prompt = """

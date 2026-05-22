@@ -27,25 +27,34 @@ except ImportError as e:
 # ----------------------- Config -----------------------
 @dataclass
 class BERTSentenceClfConfig:
-    # Inference knobs
+    """Configuration for HFBertFamilySentenceClf enricher.
+
+    Attributes:
+        model_batch_size: Number of texts per forward pass.
+        max_seq_len: Tokenizer truncation length.
+        device: Inference device — ``"cuda"``, ``"cpu"``, or ``None`` (auto-detect).
+        only_missing: Skip posts that already have an enrichment for this model.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
+        output_dir: Required when ``do_save_to_db=False``.
+        hf_model_id: Hugging Face model ID or local path.
+        hf_peft_adapter_id: Optional PEFT/LoRA adapter ID loaded on top of the base model.
+        hf_tokenizer_id: Override the Hugging Face tokenizer.
+        model_name: Human-readable name used as part of ``post_enrichments.model_id``.
+        is_multilabel: Apply sigmoid instead of softmax (multi-label classification).
+        reset_cache: Clear the local cache of processed post IDs before running.
+        cache_dir: Directory for the local cache file.
+    """
     model_batch_size: int = 8
     max_seq_len: int = 256
     device: Optional[str] = None
-
-    # Runner/selector knobs
     only_missing: bool = True
-
-    # Persistence
     do_save_to_db: bool = True
     output_dir: Optional[str] = None
-
-    # HF Model overrides
     hf_model_id: Optional[str] = None
     hf_peft_adapter_id: Optional[str] = None
     hf_tokenizer_id: Optional[str] = None
     model_name: str = "generic_classifier"
     is_multilabel: bool = False
-
     reset_cache: bool = False
     cache_dir: Optional[str] = None
 
@@ -68,6 +77,16 @@ class BERTSentenceClfConfig:
     requires=["torch", "transformers"],
 )
 class BERTSentenceClfEnricher(BaseEnricher):
+    """Generic BERT-family sentence classifier for post text.
+
+    Loads any Hugging Face sequence-classification checkpoint (optionally with a
+    PEFT/LoRA adapter) and scores post bodies. Supports binary, multi-class, and
+    multi-label classification.
+
+    - ``model_id`` format: ``"sentence_clf_<model_name>"``
+    - JSONB payload: ``{"label": str, "score": float, "all_scores": {label: float, ...}}``
+    """
+
     TARGET = "posts"
 
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):

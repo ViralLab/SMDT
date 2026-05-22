@@ -12,9 +12,7 @@ except ImportError:
 
 
 class ActionType(StrEnum):
-    """
-    Enumeration of supported action types.
-    """
+    """Supported interaction action types."""
 
     UPVOTE = "UPVOTE"
     DOWNVOTE = "DOWNVOTE"
@@ -29,9 +27,23 @@ class ActionType(StrEnum):
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class Actions:
-    """
-    Python model for `actions` table.
+    """Python model for the ``actions`` table.
+
     Represents an interaction between accounts, posts, or communities.
+
+    Attributes:
+        created_at: Timestamp of the action (tz-aware).
+        action_type: Interaction type — one of ``"UPVOTE"``, ``"DOWNVOTE"``,
+            ``"SHARE"``, ``"QUOTE"``, ``"UNFOLLOW"``, ``"FOLLOW"``, ``"COMMENT"``,
+            ``"BLOCK"``, ``"LINK"``.
+        id: Internal database primary key.
+        originator_account_id: Account ID of the actor.
+        originator_post_id: Post ID of the originating content.
+        target_account_id: Account ID of the target.
+        target_post_id: Post ID of the target content.
+        originator_community_id: Community ID of the originating community.
+        target_community_id: Community ID of the target community.
+        retrieved_at: Timestamp when the record was retrieved.
     """
 
     created_at: datetime = field()

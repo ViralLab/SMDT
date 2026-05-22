@@ -1,5 +1,5 @@
 from smdt.store.standard_db import StandardDB
-from smdt.enrichers.nlp.local.bert_clf.hf_bert_family_sentence_clf import (
+from smdt.enrichers.post.nlp.local.bert_clf.hf_bert_family_sentence_clf import (
     BERTSentenceClfConfig,
     BERTSentenceClfEnricher,
 )

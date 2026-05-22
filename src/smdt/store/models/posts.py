@@ -30,14 +30,25 @@ def _normalize_point(
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class Posts:
-    """
-    Python model for `posts` table.
+    """Python model for the ``posts`` table.
 
-    Notes:
-      - `location` column is Postgres `point` → pass as "(lon,lat)".
-        This class will also accept (lon, lat) and normalize it.
-      - `post_id` is NOT NULL in SQL; this class allows Optional for flexibility,
-        but you should provide it or you’ll hit a DB constraint error.
+    Attributes:
+        created_at: Post creation timestamp (tz-aware; naive datetimes coerced to UTC).
+        account_id: Platform-specific ID of the authoring account (required).
+        id: Internal database primary key.
+        post_id: Platform-specific post identifier.
+        conversation_id: Thread or conversation identifier.
+        community_id: Community or channel identifier.
+        body: Post text content.
+        like_count: Number of likes/reactions (must be >= 0).
+        dislike_count: Number of dislikes (must be >= 0).
+        view_count: Number of views (must be >= 0).
+        share_count: Number of shares/reposts (must be >= 0).
+        comment_count: Number of comments (must be >= 0).
+        quote_count: Number of quote-reposts (must be >= 0).
+        bookmark_count: Number of bookmarks (must be >= 0).
+        location: Geographic location as Postgres ``point`` literal ``"(lon,lat)"``; also accepts ``(lon, lat)`` tuple.
+        retrieved_at: Timestamp when the record was retrieved.
     """
 
     created_at: datetime = field()
@@ -61,7 +72,7 @@ class Posts:
     retrieved_at: Optional[datetime] = None
 
     __table_name__: str = "posts"
-    __jsonb_fields__ = set()  # no JSONB columns here
+    __jsonb_fields__ = set()
 
     # -------- Validation / normalization --------
     def __post_init__(self):

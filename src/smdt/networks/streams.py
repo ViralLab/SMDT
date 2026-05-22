@@ -13,21 +13,15 @@ def iter_edge_chunks(
     builder: NetworkBuilder,
     chunksize: int = 100_000,
 ) -> Iterator[pd.DataFrame]:
-    """
-    Stream edge rows from the database in chunks.
+    """Stream edge rows from the database in chunks.
 
-    Parameters
-    ----------
-    builder
-        A concrete NetworkBuilder instance (UserInteractionNetworkBuilder,
-        EntityCooccurrenceNetworkBuilder, BipartiteNetworkBuilder, ...).
-    chunksize
-        Number of rows per chunk to load from the DB.
+    Args:
+        builder: A concrete NetworkBuilder instance (e.g., ``UserInteractionNetworkBuilder``,
+            ``EntityCooccurrenceNetworkBuilder``, ``BipartiteNetworkBuilder``).
+        chunksize: Number of rows per chunk to load from the database.
 
-    Yields
-    ------
-    pandas.DataFrame
-        DataFrames with at least columns: src, dst, weight.
+    Yields:
+        DataFrames with at least columns: ``src``, ``dst``, ``weight``.
     """
     sql, params = builder._edge_query()
 

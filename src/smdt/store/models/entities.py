@@ -12,9 +12,7 @@ except ImportError:
 
 
 class EntityType(StrEnum):
-    """
-    Enumeration of entity types extracted from content.
-    """
+    """Entity types extracted from post or profile content."""
 
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
@@ -26,9 +24,20 @@ class EntityType(StrEnum):
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
 class Entities:
-    """
-    Python model for `entities` table.
+    """Python model for the ``entities`` table.
+
     Represents media, links, or other entities extracted from posts or profiles.
+
+    Attributes:
+        created_at: Timestamp of the source post/profile (tz-aware).
+        entity_type: Type of extracted entity — one of ``"IMAGE"``, ``"VIDEO"``,
+            ``"LINK"``, ``"USER_TAG"``, ``"HASHTAG"``, ``"EMAIL"``.
+        id: Internal database primary key.
+        account_id: Account that authored the content containing this entity.
+        community_id: Community associated with this entity.
+        post_id: Post that contains this entity (at least one of ``post_id`` or ``community_id`` required).
+        body: Entity value (e.g., URL for links, handle for user-tags).
+        retrieved_at: Timestamp when the record was retrieved.
     """
 
     created_at: datetime = field()
@@ -43,7 +52,7 @@ class Entities:
 
     # Metadata for StandardDB fallback
     __table_name__ = "entities"
-    __jsonb_fields__ = set()  # no JSONB columns here
+    __jsonb_fields__ = set()
 
     def __post_init__(self):
         """

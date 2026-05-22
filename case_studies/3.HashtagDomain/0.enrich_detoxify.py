@@ -1,5 +1,5 @@
 from smdt.store.standard_db import StandardDB
-from smdt.enrichers.nlp.local.detoxify.detoxify import DetoxifyConfig, DetoxifyToxicityEnricher
+from smdt.enrichers.post.nlp.local.detoxify.detoxify import DetoxifyConfig, DetoxifyToxicityEnricher
 
 output_dir = "/chistera/CaseStudyOutputs/HashtagDodetoxify_outputs/" 
 

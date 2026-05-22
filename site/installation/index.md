@@ -172,7 +172,7 @@ SMDT reads configuration from environment variables.
 To ensure everything is working, you can run a quick check:
 
 ```bash
-uv run python -c "import smdt; print('SMDT installed successfully!')"
+uv run python -c 'import smdt; print("SMDT installed successfully!")'
 ```
 
 You are now ready to start using SMDT! Check out the [Recipes](../recipes/) to get started.

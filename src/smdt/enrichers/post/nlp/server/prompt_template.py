@@ -14,12 +14,30 @@ from .prompt_adapters.base import ChatMessage
 
 @dataclass
 class PromptTemplate:
+    """A prompt template loaded from a YAML or JSON file.
+
+    Attributes:
+        id: Template identifier within the prompt file.
+        system: System message template string (supports ``str.format`` placeholders).
+        user: User message template string (supports ``str.format`` placeholders).
+        defaults: Default values for template placeholders.
+    """
     id: str
     system: str
     user: str
     defaults: Dict[str, Any]
 
     def render(self, **kwargs: Any) -> List[ChatMessage]:
+        """Render the template into a list of ``ChatMessage`` objects.
+
+        **Arguments**:
+
+        - `**kwargs` - Values for template placeholders; merged with ``defaults``.
+
+        **Returns**:
+
+        List of ``[system, user]`` ``ChatMessage`` instances.
+        """
         ctx = {**self.defaults, **kwargs}
         system = self.system.format(**ctx)
         user = self.user.format(**ctx)

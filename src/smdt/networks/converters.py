@@ -17,20 +17,14 @@ def _is_directed(meta: dict) -> bool:
 
 
 def to_networkx(result: NetworkResult, weighted: bool = True) -> nx.Graph:
-    """
-    Convert a NetworkResult into a NetworkX graph.
+    """Convert a NetworkResult into a NetworkX graph.
 
-    Parameters
-    ----------
-    result : NetworkResult
-        The output of any network builder (user_interaction, entity_cooccurrence,
-        bipartite, etc.)
-    weighted : bool, default=True
-        Whether to include the 'weight' column as an edge attribute.
+    Args:
+        result: Output of any network builder (user_interaction, entity_cooccurrence, bipartite, etc.).
+        weighted: Whether to include the ``weight`` column as an edge attribute.
 
-    Returns
-    -------
-    nx.Graph or nx.DiGraph
+    Returns:
+        ``nx.DiGraph`` if ``result.meta["directed"]`` is true, otherwise ``nx.Graph``.
     """
     directed = _is_directed(result.meta)
 
@@ -64,23 +58,16 @@ def to_networkx_sample(
     weighted: bool = True,
     n: int = 10_000,
 ) -> nx.Graph:
-    """
-    Quickly sample a subset of edges and convert to a NetworkX graph.
+    """Sample a subset of edges and convert to a NetworkX graph.
 
-    Parameters
-    ----------
-    edges : pd.DataFrame
-        DataFrame with columns src, dst[, weight].
-    directed : bool, default=False
-        Whether to use DiGraph or Graph.
-    weighted : bool, default=True
-        Whether to include edge weights.
-    n : int, default=10000
-        Number of edges to sample.
+    Args:
+        edges: DataFrame with columns ``src``, ``dst``, and optionally ``weight``.
+        directed: Whether to use ``DiGraph`` instead of ``Graph``.
+        weighted: Whether to include edge weights.
+        n: Maximum number of edges to sample (default 10 000).
 
-    Returns
-    -------
-    nx.Graph or nx.DiGraph
+    Returns:
+        ``nx.DiGraph`` if ``directed`` is true, otherwise ``nx.Graph``.
     """
     if edges.empty:
         return nx.DiGraph() if directed else nx.Graph()
