@@ -262,6 +262,7 @@ class BlueSkyAPIStandardizer(Standardizer):
     """
 
     name: str = "bluesky_api"
+    platform: str = "bluesky"
 
     def standardize(self, input_record) -> Iterable[Any]:
         record, src = input_record

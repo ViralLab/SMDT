@@ -32,6 +32,7 @@ class ScoredStandardizer(Standardizer):
     schema models (Communities, Accounts, Posts, Entities, Actions).
     """
     name: str = "scored_standardizer"
+    platform: str = "scored"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
         record, src = input_record

@@ -127,6 +127,7 @@ class BlueSkyDatasetStandardizer(Standardizer):
     """
 
     name: str = "bluesky_dataset_standardizer"
+    platform: str = "bluesky"
 
     def standardize(self, input_record) -> List[Any]:
         """Convert a raw input record into standard model objects.

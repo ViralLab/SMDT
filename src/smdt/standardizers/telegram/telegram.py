@@ -32,6 +32,7 @@ class PushShiftTelegramStandardizer(Standardizer):
     """
 
     name: str = "telegram_standardizer"
+    platform: str = "telegram"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
         """

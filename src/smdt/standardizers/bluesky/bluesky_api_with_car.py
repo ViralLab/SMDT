@@ -171,6 +171,7 @@ def extract_target_from_uri(uri: Any) -> Tuple[str, str]:
 @dataclass
 class BlueSkyAPICARStandardizer(Standardizer):
     name: str = "bluesky_api_with_CAR"
+    platform: str = "bluesky"
 
     last_cid2key: Optional[Dict[Any, str]] = None
     last_did: Optional[str] = None

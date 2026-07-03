@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import (
@@ -81,6 +82,8 @@ class PipelineConfig:
         progress: Callback function for progress updates.
         checkpoint_file: Optional file path for checkpointing completed files.
         reset_checkpoint: If True, reset the checkpoint file at the start of the run.
+        dataset_description: Optional operator-supplied note about this ingestion run,
+            appended as a timestamped log entry to the DB's single `dataset_meta` row.
     """
 
     batch_size: int = 1_000  # records -> standardizer batch size
@@ -90,6 +93,7 @@ class PipelineConfig:
     progress: ProgressCallback | None = None
     checkpoint_file: str | None = None
     reset_checkpoint: bool | None = False
+    dataset_description: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +171,33 @@ def _iter_file_records_global(fp, hints, reader_kwargs_cfg):
         ),
         reader_name_fallback=fp.reader_name,
     )
+
+
+def _stamp_platform(
+    models: Iterable[DBModel], platform: Optional[str]
+) -> List[DBModel]:
+    """Stamp `platform` onto Accounts/Posts/Communities instances lacking one.
+
+    Standardizers build these frozen dataclasses in many different (sometimes
+    recursive) helper functions; rather than threading `platform=` through every
+    construction call site, we fill it in once here, generically, right after
+    `standardize()` returns.
+
+    Args:
+        models: Models returned by a Standardizer.
+        platform: Canonical platform to stamp (e.g. "twitter"), or None to skip.
+
+    Returns:
+        List of models, with platform filled in where applicable.
+    """
+    if not platform:
+        return list(models)
+    stamped: List[DBModel] = []
+    for model in models:
+        if isinstance(model, (Accounts, Posts, Communities)) and model.platform is None:
+            model = replace(model, platform=platform)
+        stamped.append(model)
+    return stamped
 
 
 def _process_file_worker_with_db(
@@ -283,6 +314,9 @@ def _process_file_worker_with_db(
             try:
                 sub_result = standardizer.standardize((record, src))
                 if sub_result is not None:
+                    sub_result = _stamp_platform(
+                        sub_result, getattr(standardizer, "platform", None)
+                    )
                     _add_models_to_buffers_local(sub_result)
                 else:
                     counters["empty_standardize"] += 1
@@ -305,6 +339,71 @@ def _process_file_worker_with_db(
         _flush_buffer_worker(cls_, items)
 
     return counters, perf_counter() - t0_file, fp.path
+
+
+def _upsert_dataset_meta(
+    db: StandardDB, standardizer: Standardizer, description: Optional[str]
+) -> None:
+    """Record this ingestion run in the DB's single `dataset_meta` row.
+
+    There is at most one `dataset_meta` row per database. Each call appends a
+    timestamped log entry to `dataset_description` (using `description` if given,
+    else a generic "ingestion run" marker), records `standardizer.name` if it
+    isn't already on file, and creates the row on the first call.
+
+    Args:
+        db: Destination database.
+        standardizer: Standardizer being used for this run (needs `.platform`/`.name`).
+        description: Optional operator-supplied note about this ingestion run.
+    """
+    platform = getattr(standardizer, "platform", None)
+    std_name = getattr(standardizer, "name", None)
+    if not platform or not std_name:
+        log.warning(
+            "Standardizer %r has no platform/name set; skipping dataset_meta update",
+            standardizer,
+        )
+        return
+
+    now = datetime.now(timezone.utc)
+    entry = f"[{now.isoformat()}] {description or 'ingestion run'}"
+
+    conn = db.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, standardizer_name, dataset_description FROM dataset_meta LIMIT 1"
+            )
+            row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    """
+                    INSERT INTO dataset_meta
+                        (platform, standardizer_name, dataset_description, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (platform, std_name, entry, now, now),
+                )
+            else:
+                row_id, existing_names, existing_desc = row
+                names = [
+                    n.strip() for n in (existing_names or "").split(",") if n.strip()
+                ]
+                if std_name not in names:
+                    names.append(std_name)
+                new_names = ", ".join(names)
+                new_desc = f"{existing_desc}\n\n{entry}" if existing_desc else entry
+                cur.execute(
+                    """
+                    UPDATE dataset_meta
+                    SET standardizer_name = %s, dataset_description = %s, updated_at = %s
+                    WHERE id = %s
+                    """,
+                    (new_names, new_desc, now, row_id),
+                )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +433,8 @@ def run_pipeline(
     """
     cfg = config or PipelineConfig()
     on_conflict = dict(cfg.on_conflict or {})
+
+    _upsert_dataset_meta(db, standardizer, cfg.dataset_description)
 
     # Checkpoint Handling
     completed_files: set[str] = set()
@@ -559,6 +660,9 @@ def run_pipeline(
                     try:
                         sub_result = standardizer.standardize((record, src))
                         if sub_result is not None:
+                            sub_result = _stamp_platform(
+                                sub_result, getattr(standardizer, "platform", None)
+                            )
                             _add_models_to_buffers(sub_result)
                         else:
                             # You had this debug print originally

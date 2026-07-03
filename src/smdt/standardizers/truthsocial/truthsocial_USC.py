@@ -50,6 +50,7 @@ class TruthSocialUSCStandardizer(Standardizer):
     """
 
     name: str = "truthsocial_usc"
+    platform: str = "truthsocial"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> Iterable[Any]:
         """

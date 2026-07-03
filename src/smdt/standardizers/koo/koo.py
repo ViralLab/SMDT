@@ -35,6 +35,7 @@ class KooStandardizer(Standardizer):
     """
 
     name: str = "koo"
+    platform: str = "koo"
 
     def get_post_comment_entities(self, record):
         """

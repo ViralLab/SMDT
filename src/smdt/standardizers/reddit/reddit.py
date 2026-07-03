@@ -45,6 +45,7 @@ class PushShiftRedditStandardizer(Standardizer):
     """
 
     name: str = "reddit_standardizer"
+    platform: str = "reddit"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
         """

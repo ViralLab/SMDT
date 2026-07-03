@@ -31,6 +31,7 @@ class GabStandardizer(Standardizer):
     """
 
     name: str = "gab_standardizer"
+    platform: str = "gab"
 
     def _get_account_info(self, record: dict) -> Accounts:
         """

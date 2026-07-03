@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS communities (
     post_count BIGINT,
     profile_image_url TEXT,
     owner_account_id TEXT,
+    platform TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (member_count IS NULL OR member_count >= 0),
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     follower_count BIGINT,
     is_verified BOOLEAN,
     profile_image_url TEXT,
+    platform TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (post_count     IS NULL OR post_count     >= 0),
@@ -69,6 +71,7 @@ CREATE TABLE IF NOT EXISTS posts (
     quote_count BIGINT,
     bookmark_count BIGINT,
     location geometry(Point, 4326),
+    platform TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (like_count IS NULL OR like_count >= 0),
@@ -129,6 +132,17 @@ CREATE TABLE IF NOT EXISTS post_enrichments (
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     UNIQUE (model_id, post_id)
+);
+
+-- One row per database: describes the dataset ingested into this DB.
+-- Copied as-is from the source DB; not subject to hash/redact policy.
+CREATE TABLE IF NOT EXISTS dataset_meta (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    platform TEXT NOT NULL,
+    standardizer_name TEXT NOT NULL,
+    dataset_description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 

@@ -148,6 +148,7 @@ class TwitterV2Standardizer(Standardizer):
     """
 
     name: str = "twitter_v2"
+    platform: str = "twitter"
 
     def standardize(
         self, input_record: Tuple[Mapping[str, Any], SourceInfo]

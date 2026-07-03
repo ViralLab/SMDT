@@ -34,6 +34,7 @@ class VoatCoStandardizer(Standardizer):
     """
 
     name: str = "voatco_standardizer"
+    platform: str = "voatco"
     subverse2ownerid = dict()
 
     def _get_z_count(self, value):

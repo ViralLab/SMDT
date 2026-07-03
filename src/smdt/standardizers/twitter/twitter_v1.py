@@ -56,6 +56,7 @@ class TwitterV1Standardizer(Standardizer):
     """
 
     name: str = "twitter_v1"
+    platform: str = "twitter"
 
     _DATE_FMT = "%a %b %d %H:%M:%S %z %Y"
 

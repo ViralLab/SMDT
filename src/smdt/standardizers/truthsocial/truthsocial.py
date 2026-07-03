@@ -74,6 +74,7 @@ class TruthSocialStandardizer(Standardizer):
     """
 
     name: str = "truth_social_stream"
+    platform: str = "truthsocial"
 
     replied_user_by_replying_user: dict[str, str] = field(
         default_factory=dict

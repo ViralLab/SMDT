@@ -118,6 +118,7 @@ class Pseudonymizer:
             "actions",
             "post_enrichments",
             "account_enrichments",
+            "dataset_meta",
         ]:
             start = time.time()
             log.info("Starting pseudonymization for table %s", table)
@@ -142,7 +143,7 @@ class Pseudonymizer:
                     """
                     SELECT table_name FROM information_schema.tables
                     WHERE table_schema = COALESCE(current_schema(), 'public')
-                    AND table_name IN ('accounts', 'posts', 'entities', 'actions', 'post_enrichments', 'account_enrichments', 'communities')
+                    AND table_name IN ('accounts', 'posts', 'entities', 'actions', 'post_enrichments', 'account_enrichments', 'communities', 'dataset_meta')
                     """
                 )
                 existing = {r[0] for r in cur.fetchall()}
@@ -157,6 +158,7 @@ class Pseudonymizer:
             "post_enrichments",
             "account_enrichments",
             "communities",
+            "dataset_meta",
         }:
             # Destination looks initialized
             if self.cfg.ask_reinit and sys.stdin.isatty():
@@ -412,6 +414,7 @@ class Pseudonymizer:
             "posts",
             "accounts",
             "communities",
+            "dataset_meta",
         ]
         conn = self.dst.connect()
         try:

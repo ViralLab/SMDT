@@ -20,6 +20,7 @@ class Accounts:
         follower_count: Number of followers (must be >= 0).
         is_verified: Whether the account has a platform verification badge.
         profile_image_url: URL of the account's profile image.
+        platform: Canonical source platform (e.g. "twitter", "weibo").
         retrieved_at: Timestamp when the record was retrieved.
     """
 
@@ -38,6 +39,7 @@ class Accounts:
     follower_count: Optional[int] = None
     is_verified: Optional[bool] = None
     profile_image_url: Optional[str] = None
+    platform: Optional[str] = None
     retrieved_at: Optional[datetime] = None
 
     # Metadata for StandardDB fallback
@@ -69,6 +71,7 @@ class Accounts:
             "bio",
             "location",
             "profile_image_url",
+            "platform",
         ):
             val = getattr(self, name)
             if isinstance(val, str):
@@ -92,6 +95,7 @@ class Accounts:
             "follower_count",
             "is_verified",
             "profile_image_url",
+            "platform",
             "created_at",
             "retrieved_at",
         )
@@ -112,6 +116,7 @@ class Accounts:
             self.follower_count,
             self.is_verified,
             self.profile_image_url,
+            self.platform,
             self.created_at,
             self.retrieved_at,
         )
@@ -135,6 +140,7 @@ class Accounts:
             follower_count=row.get("follower_count"),
             is_verified=row.get("is_verified"),
             profile_image_url=row.get("profile_image_url"),
+            platform=row.get("platform"),
             retrieved_at=row.get("retrieved_at"),
         )
 

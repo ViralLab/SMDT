@@ -48,6 +48,7 @@ class Posts:
         quote_count: Number of quote-reposts (must be >= 0).
         bookmark_count: Number of bookmarks (must be >= 0).
         location: Geographic location as Postgres ``point`` literal ``"(lon,lat)"``; also accepts ``(lon, lat)`` tuple.
+        platform: Canonical source platform (e.g. "twitter", "weibo").
         retrieved_at: Timestamp when the record was retrieved.
     """
 
@@ -69,6 +70,7 @@ class Posts:
     bookmark_count: Optional[int] = None
 
     location: Optional[Union[str, Tuple[float, float], List[float]]] = None
+    platform: Optional[str] = None
     retrieved_at: Optional[datetime] = None
 
     __table_name__: str = "posts"
@@ -109,7 +111,7 @@ class Posts:
         if self.dislike_count is not None and self.dislike_count < 0:
             raise ValueError(f"dislike_count must be >= 0 (got {self.dislike_count})")
         # normalize empty strings to None for nullable text fields
-        for name in ("post_id", "conversation_id", "community_id", "body"):
+        for name in ("post_id", "conversation_id", "community_id", "body", "platform"):
             val = getattr(self, name)
             if isinstance(val, str) and val.strip() == "":
                 object.__setattr__(self, name, None)
@@ -139,6 +141,7 @@ class Posts:
             "quote_count",
             "bookmark_count",
             "location",
+            "platform",
             "created_at",
             "retrieved_at",
         )
@@ -162,6 +165,7 @@ class Posts:
             self.quote_count,
             self.bookmark_count,
             self.location,  # "(lon,lat)" or None
+            self.platform,
             self.created_at,
             self.retrieved_at,
         )
@@ -190,6 +194,7 @@ class Posts:
             quote_count=row.get("quote_count"),
             bookmark_count=row.get("bookmark_count"),
             location=_normalize_point(loc),
+            platform=row.get("platform"),
             retrieved_at=row.get("retrieved_at"),
         )
 

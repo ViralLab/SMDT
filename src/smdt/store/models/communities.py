@@ -35,6 +35,7 @@ class Communities:
         post_count: Number of posts in the community (must be >= 0).
         owner_account_id: Account ID of the community owner.
         profile_image_url: URL of the community's profile image.
+        platform: Canonical source platform (e.g. "twitter", "weibo").
         retrieved_at: Timestamp when the record was retrieved.
     """
 
@@ -53,6 +54,7 @@ class Communities:
     post_count: Optional[int] = None
     owner_account_id: Optional[str] = None
     profile_image_url: Optional[str] = None
+    platform: Optional[str] = None
     retrieved_at: Optional[datetime] = None
 
     # Metadata for StandardDB fallback
@@ -84,6 +86,7 @@ class Communities:
             "community_name",
             "bio",
             "profile_image_url",
+            "platform",
         ):
             val = getattr(self, name)
             if isinstance(val, str):
@@ -107,6 +110,7 @@ class Communities:
             "post_count",
             "owner_account_id",
             "profile_image_url",
+            "platform",
             "created_at",
             "retrieved_at",
         )
@@ -133,6 +137,7 @@ class Communities:
             self.post_count,
             self.owner_account_id,
             self.profile_image_url,
+            self.platform,
             self.created_at,
             self.retrieved_at,
         )
@@ -156,6 +161,7 @@ class Communities:
             post_count=row.get("post_count"),
             owner_account_id=row.get("owner_account_id"),
             profile_image_url=row.get("profile_image_url"),
+            platform=row.get("platform"),
             retrieved_at=row.get("retrieved_at"),
         )
 

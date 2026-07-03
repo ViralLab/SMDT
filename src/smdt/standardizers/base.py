@@ -47,6 +47,12 @@ class Standardizer:
     """A Standardizer turns raw records into one or more DB model objects."""
 
     name: str
+    """Standardizer variant identifier, e.g. "twitter_v2"."""
+
+    platform: str
+    """Canonical source platform, e.g. "twitter". Stamped onto every emitted
+    Accounts/Posts/Communities row so downstream tooling (e.g. platform-aware
+    redaction) can select behavior per platform without depending on `name`."""
 
     def standardize(
         self, input_record: Tuple[dict, SourceInfo]

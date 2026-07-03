@@ -32,6 +32,7 @@ class ParlerStandardizer(Standardizer):
     """
 
     name: str = "parler"
+    platform: str = "parler"
 
     def standardize(self, input_record: Tuple[dict, SourceInfo]) -> List[Any]:
         """

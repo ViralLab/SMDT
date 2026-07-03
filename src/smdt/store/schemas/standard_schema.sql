@@ -28,13 +28,14 @@ CREATE TABLE IF NOT EXISTS communities (
     post_count BIGINT,
     profile_image_url TEXT,
     owner_account_id TEXT,
+    platform TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (member_count IS NULL OR member_count >= 0),
     CHECK (post_count   IS NULL OR post_count   >= 0),
     PRIMARY KEY (created_at, id)
 );
- 
+
 
 CREATE TABLE IF NOT EXISTS accounts (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -42,12 +43,13 @@ CREATE TABLE IF NOT EXISTS accounts (
     username TEXT,
     profile_name TEXT,
     bio TEXT,
-    location geometry(Point, 4326),         
+    location geometry(Point, 4326),
     post_count BIGINT,
     friend_count BIGINT,
     follower_count BIGINT,
     is_verified BOOLEAN,
     profile_image_url TEXT,
+    platform TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (post_count     IS NULL OR post_count     >= 0),
@@ -70,7 +72,8 @@ CREATE TABLE IF NOT EXISTS posts (
     comment_count BIGINT,
     quote_count BIGINT,
     bookmark_count BIGINT,
-    location geometry(Point, 4326),         
+    location geometry(Point, 4326),
+    platform TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     retrieved_at TIMESTAMPTZ,
     CHECK (like_count IS NULL OR like_count >= 0),
@@ -139,6 +142,17 @@ CREATE TABLE IF NOT EXISTS hash_map (
     hash_key TEXT NOT NULL UNIQUE,
     hash_value TEXT,
     created_at TIMESTAMPTZ NOT NULL
+);
+
+-- One row per database: describes the dataset ingested into this DB.
+-- dataset_description accumulates a timestamped log entry per ingestion run.
+CREATE TABLE IF NOT EXISTS dataset_meta (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    platform TEXT NOT NULL,
+    standardizer_name TEXT NOT NULL,
+    dataset_description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Hypertables
