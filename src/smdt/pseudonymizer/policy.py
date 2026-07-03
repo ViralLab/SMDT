@@ -1,4 +1,4 @@
-"""Anonymization policy configuration."""
+"""Pseudonymization policy configuration."""
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -6,12 +6,12 @@ from typing import Dict, Set, Mapping
 
 
 @dataclass(frozen=True)
-class AnonPolicy:
+class PseudonymPolicy:
     """Column-level actions per table: HASH, REDACT, DROP, KEEP, BLANK.
 
     - `hash_cols`: full pseudonymization columns (IDs, usernames, etc.)
     - `redact_cols`: free-text columns to redact in-place (becomes *_redacted)
-    - `drop_cols`: columns removed entirely in anon DB
+    - `drop_cols`: columns removed entirely in the pseudonymized DB
     - `blank_cols`: columns kept in schema but set to NULL on export
     - Everything else is copied as-is (KEEP)
     """
@@ -70,7 +70,7 @@ class AnonPolicy:
         return col in self.blank_cols.get(table, set())
 
 
-DEFAULT_POLICY = AnonPolicy(
+DEFAULT_POLICY = PseudonymPolicy(
     hash_cols={
         "communities": {"community_id", "community_username", "community_name", "bio"},
         "accounts": {"account_id", "username", "profile_name"},

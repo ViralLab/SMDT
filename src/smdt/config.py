@@ -48,8 +48,8 @@ class DBConfig:
 
 
 @dataclass
-class AnonymizationVariables:
-    """Configuration for anonymization secrets."""
+class PseudonymizationVariables:
+    """Configuration for pseudonymization secrets."""
 
     @property
     def pepper(self) -> bytes:
@@ -64,7 +64,7 @@ class AnonymizationVariables:
         val: str = os.getenv("PEPPER")
         if not val:
             raise RuntimeError(
-                "PEPPER environment variable is required for anonymization"
+                "PEPPER environment variable is required for pseudonymization"
             )
 
         return val.encode("utf-8")

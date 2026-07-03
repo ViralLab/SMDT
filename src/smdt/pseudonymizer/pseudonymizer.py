@@ -1,4 +1,4 @@
-"""Main anonymization module."""
+"""Main pseudonymization module."""
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -6,9 +6,9 @@ from typing import Iterable, Dict, Any, Optional, Tuple, List
 from psycopg.rows import dict_row
 from ..store.standard_db import StandardDB
 from ..store.models import MODEL_REGISTRY
-from .pseudonyms import Pseudonymizer, Algorithm
+from .pseudonyms import Hasher, Algorithm
 from .redact import Redactor
-from .policy import AnonPolicy, DEFAULT_POLICY
+from .policy import PseudonymPolicy, DEFAULT_POLICY
 
 import time
 import logging, sys
@@ -25,8 +25,8 @@ logging.basicConfig(
 
 
 @dataclass
-class AnonymizeConfig:
-    """Configuration for the anonymization process.
+class PseudonymizeConfig:
+    """Configuration for the pseudonymization process.
 
     Attributes:
         src_db_name: Name of the source database.
@@ -48,33 +48,33 @@ class AnonymizeConfig:
     algorithm: Algorithm = Algorithm.SHA256
     output_hex_len: int = 64
     schema_package: str = "smdt.store.schemas"
-    schema_resource: str = "anon_std_schema.sql"
+    schema_resource: str = "pseudo_std_schema.sql"
     time_window: Optional[Tuple[str, str]] = None
     chunk_rows: int = 1_000
     owner_schema: Optional[str] = None
     ask_reinit: bool = True
 
 
-class Anonymizer:
-    """ETL: read from raw DB, transform, write to anonymized DB.
+class Pseudonymizer:
+    """ETL: read from raw DB, transform, write to pseudonymized DB.
 
-    This class handles the entire anonymization process, including reading from the
-    source database, applying anonymization policies (hashing, redaction, etc.),
+    This class handles the entire pseudonymization process, including reading from the
+    source database, applying pseudonymization policies (hashing, redaction, etc.),
     and writing to the destination database.
     """
 
-    def __init__(self, cfg: AnonymizeConfig, policy: AnonPolicy = DEFAULT_POLICY):
-        """Initialize the Anonymizer.
+    def __init__(self, cfg: PseudonymizeConfig, policy: PseudonymPolicy = DEFAULT_POLICY):
+        """Initialize the Pseudonymizer.
 
         Args:
-            cfg: Configuration for the anonymization process.
-            policy: Anonymization policy to apply.
+            cfg: Configuration for the pseudonymization process.
+            policy: Pseudonymization policy to apply.
         """
         self.cfg = cfg
         self.policy = policy
         self.src = StandardDB(cfg.src_db_name)
         self.dst = StandardDB(cfg.dst_db_name)
-        self.pseudo = Pseudonymizer(
+        self.hasher = Hasher(
             algo=cfg.algorithm,
             pepper=cfg.pepper,
             output_hex_len=cfg.output_hex_len,
@@ -83,7 +83,7 @@ class Anonymizer:
 
         domain_mapper = lambda host: host
         self.redactor = Redactor(
-            handle_mapper=lambda h: self.pseudo.make(h) or "",
+            handle_mapper=lambda h: self.hasher.make(h) or "",
             map_host=domain_mapper,
         )
 
@@ -91,7 +91,7 @@ class Anonymizer:
         """Initialize the destination database schema.
 
         This method initializes the destination database and applies the
-        anonymization schema.
+        pseudonymization schema.
         """
         from importlib import resources as _res
 
@@ -102,14 +102,14 @@ class Anonymizer:
             self.dst.init_schema(str(p))
 
     def run(self) -> None:
-        """Run the anonymization process for all configured tables.
+        """Run the pseudonymization process for all configured tables.
 
         This method iterates through a predefined list of tables, copies data
-        from the source to the destination, applying anonymization transformations
+        from the source to the destination, applying pseudonymization transformations
         along the way.
         """
         self._ensure_prepared()
-        log.info("Starting anonymization…")
+        log.info("Starting pseudonymization…")
         for table in [
             "communities",
             "accounts",
@@ -120,7 +120,7 @@ class Anonymizer:
             "account_enrichments",
         ]:
             start = time.time()
-            log.info("Starting anonymization for table %s", table)
+            log.info("Starting pseudonymization for table %s", table)
             rows = self._copy_table(table)
             log.info("Finished %s: %d rows in %.2fs", table, rows, time.time() - start)
 
@@ -191,7 +191,7 @@ class Anonymizer:
             _res.files(self.cfg.schema_package) / self.cfg.schema_resource
         ) as p:
             self.dst.init_schema(str(p))
-        log.info("Applied anon schema to destination database.")
+        log.info("Applied pseudonymized schema to destination database.")
 
     def _select_iter(self, table: str) -> Iterable[Dict[str, Any]]:
         """Iterate over rows from the source table.
@@ -244,7 +244,7 @@ class Anonymizer:
         return False
 
     def _transform_row(self, table: str, row: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform a single row according to the anonymization policy.
+        """Transform a single row according to the pseudonymization policy.
 
         Args:
             table: Name of the table the row belongs to.
@@ -263,7 +263,7 @@ class Anonymizer:
                 if self.policy.is_drop(table, col):
                     continue
                 if self.policy.is_hash(table, col):
-                    out[col] = self.pseudo.make(val)
+                    out[col] = self.hasher.make(val)
                 elif self.policy.is_blank(table, col):
                     out[col] = None
                 else:
@@ -277,7 +277,7 @@ class Anonymizer:
             if self.policy.is_drop(table, col):
                 continue
             if self.policy.is_hash(table, col):
-                out[col] = self.pseudo.make(val)
+                out[col] = self.hasher.make(val)
             elif self.policy.is_redact(table, col):
                 out[col] = self.redactor.redact(val)
             elif self.policy.is_blank(table, col):
@@ -313,7 +313,7 @@ class Anonymizer:
         return model_cls(**row)
 
     def _copy_table(self, table: str) -> int:
-        """Copy and anonymize a table from source to destination.
+        """Copy and pseudonymize a table from source to destination.
 
         Args:
             table: Name of the table to copy.
@@ -327,12 +327,12 @@ class Anonymizer:
 
         for src_row in self._select_iter(table):
 
-            anon_row = self._transform_row(table, src_row)
+            pseudo_row = self._transform_row(table, src_row)
             try:
-                model_obj = self._row_to_model(table, anon_row)
+                model_obj = self._row_to_model(table, pseudo_row)
             except TypeError:
                 allowed = set(self._insert_columns_for_table(table))
-                slim = {k: v for k, v in anon_row.items() if k in allowed}
+                slim = {k: v for k, v in pseudo_row.items() if k in allowed}
                 model_obj = self._row_to_model(table, slim)
                 log.exception(
                     "TypeError hydrating model for table %s; using slim row", table
@@ -398,7 +398,7 @@ class Anonymizer:
         # If an owner schema is configured in DBConfig, prefer StandardDB.reset_schema()
         if self.cfg.owner_schema:
             try:
-                # StandardDB.reset_schema uses cfg.owner from DBConfig, not AnonymizeConfig
+                # StandardDB.reset_schema uses cfg.owner from DBConfig, not PseudonymizeConfig
                 self.dst.reset_schema()  # may require cfg.owner to be set in DBConfig
                 return
             except Exception:

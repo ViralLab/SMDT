@@ -1,4 +1,4 @@
--- ========= Anonymized Schema =========
+-- ========= Pseudonymized Schema =========
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS postgis;
 

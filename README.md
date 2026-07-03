@@ -22,7 +22,7 @@ The goal is to provide a flexible, consistent data model to enable reproducible 
 ## Features
 
 * **Ingest & Standardize:** Convert raw platform exports (Twitter/X, Bluesky, TruthSocial) into normalized SQL tables (`Communities`, `Accounts`, `Posts`, `Actions`, `Entities`).
-* **Anonymize & Redact:** Remove or pseudonymize sensitive fields using policy-driven helpers before sharing datasets.
+* **Pseudonymize & Redact:** Remove or pseudonymize sensitive fields using policy-driven helpers before sharing datasets.
 * **Enrich & Label:** Apply computed features (language detection, toxicity scores, embeddings) via a local or server-backed enrichment framework.
 * **Build Networks:** Generate edge lists (User–User, Entity–Cooccurrence) and bipartite graphs compatible with NetworkX and Gephi.
 * **Scale:** Designed for streaming; handles datasets that do not fit in memory using incremental builders and Parquet exports.
@@ -259,8 +259,8 @@ result.edges.to_parquet("edges.parquet")
 ```
 SMDT/
 ├── src/smdt/                  # Main package
-│   ├── anonymizer/            # Redaction and pseudonymization utilities
-│   ├── config.py              # Configuration (DB, anonymization)
+│   ├── pseudonymizer/         # Redaction and pseudonymization utilities
+│   ├── config.py              # Configuration (DB, pseudonymization)
 │   ├── enrichers/             # Text enrichment framework (local + server adapters)
 │   ├── ingest/                # Ingestion pipelines and deduplication logic
 │   ├── inspector/             # Data quality inspection utilities

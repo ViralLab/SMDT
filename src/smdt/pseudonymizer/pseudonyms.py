@@ -25,7 +25,7 @@ class Algorithm(str, Enum):
 
 
 @dataclass(frozen=True)
-class Pseudonymizer:
+class Hasher:
     """Deterministic, keyed pseudonymization via HMAC-like construction.
 
     We *always* use a secret pepper. Even if the user chooses MD5/Whirlpool/SHAx,
