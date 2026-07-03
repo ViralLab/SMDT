@@ -6,6 +6,7 @@ from .redact import Redactor
 from .pseudonyms import Hasher
 from .pii_policy import PiiPolicy, PiiAction, PiiRule, DEFAULT_PII_POLICY
 from .pii_engine import PiiEngine
+from .erasure import Eraser, ErasureTarget, ErasureMode
 
 __all__ = [
     "Pseudonymizer",
@@ -20,4 +21,7 @@ __all__ = [
     "PiiRule",
     "DEFAULT_PII_POLICY",
     "PiiEngine",
+    "Eraser",
+    "ErasureTarget",
+    "ErasureMode",
 ]
