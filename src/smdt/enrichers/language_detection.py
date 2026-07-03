@@ -5,7 +5,7 @@ import re, json
 from pathlib import Path
 
 from typing import Any, Dict, List, Optional
-from smdt.enrichers.base import BaseEnricher
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
@@ -13,38 +13,15 @@ from smdt.store.standard_db import StandardDB
 
 
 @dataclass
-class LanguageDetectionConfig:
+class LanguageDetectionConfig(EnricherRunConfig):
     """Configuration for LanguageDetectionEnricher.
 
     Attributes:
-        model_id_postfix: Suffix appended to form the ``post_enrichments.model_id`` key.
-        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
-        output_dir: Required when ``do_save_to_db=False``.
-        reset_cache: Clear the local cache of processed post IDs before running.
-        cache_dir: Directory for the local cache file.
+        model_id_postfix: Optional suffix appended to form the
+            ``post_enrichments.model_id`` key (``"langdetect_<postfix>"``).
+            Leave unset to just use ``"langdetect"``.
     """
-    model_id_postfix: str
-    do_save_to_db: bool
-    output_dir: Optional[str] = None
-    reset_cache: bool = False
-    cache_dir: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        self.model_id_postfix = (self.model_id_postfix or "").strip()
-
-        if not self.model_id_postfix:
-            raise ValueError("model_id_postfix is required.")
-
-        if self.do_save_to_db is None:
-            raise ValueError("do_save_to_db is required and must be a boolean.")
-
-        if not isinstance(self.do_save_to_db, bool):
-            raise ValueError("do_save_to_db must be a boolean.")
-
-        if self.do_save_to_db == False:
-            if not self.output_dir:
-                raise ValueError("output_dir is required when do_save_to_db=False.")
-            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+    model_id_postfix: Optional[str] = None
 
 
 @register(
@@ -56,15 +33,15 @@ class LanguageDetectionConfig:
 class LanguageDetectionEnricher(BaseEnricher):
     """Detects the language of post bodies using ``langdetect``.
 
-    - ``model_id`` format: ``"langdetect_<model_id_postfix>"``
+    - ``model_id`` format: ``"langdetect"`` or ``"langdetect_<model_id_postfix>"``
     - JSONB payload: ``{"langs": [{"lang": "en", "prob": 0.999}, ...], "len": 123}``
     """
 
-    TARGET = "posts"
-    ENRICHER_ID = "langdetect"  # becomes post_enrichments.model_id
-
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
-        super().__init__(db, config=config)
+        super().__init__(db)
+        self.cfg = self._coerce_config(config, LanguageDetectionConfig)
+        self.model_id = self._make_model_id(self.cfg.model_id_postfix)
+
         # regexes ported from your previous implementation
         self._emoji_re = re.compile(
             "["  # note: python handles these unicode ranges
@@ -81,12 +58,7 @@ class LanguageDetectionEnricher(BaseEnricher):
         self._emoji_tag_re = re.compile(r"<emoji:\s*\w+>")
         self.applied_datetime = datetime.now(timezone.utc)
 
-        # load the cached IDs
-        if self.cfg.reset_cache:
-            self.cached_ids = set()
-            self.reset_cache()
-        else:
-            self.cached_ids = set(self.load_cached_output_ids_from_file())
+        self._init_cache()
 
     # ---------------- lifecycle / model ----------------
     def load_model(self) -> None:
@@ -103,7 +75,7 @@ class LanguageDetectionEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         # Use the real table for exclusion
         if not self.cfg.reset_cache and self.cached_ids:
@@ -130,7 +102,7 @@ class LanguageDetectionEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         if not self.cfg.reset_cache and self.cached_ids:
             where_clauses.append(
@@ -177,7 +149,7 @@ class LanguageDetectionEnricher(BaseEnricher):
                 {
                     "created_at": created_at,
                     "post_id": post_id,
-                    "model_id": self._ENRICHER_ID,
+                    "model_id": self.model_id,
                     "body": payload,
                 }
             )
@@ -226,7 +198,7 @@ class LanguageDetectionEnricher(BaseEnricher):
                     date_str = c_at.strftime("%Y-%m-%d") if c_at else "unknown"
 
                     # 2. Construct filename: e.g., model_name_2023-10-27.jsonl
-                    safe_model_id = self.MODEL_ID.replace("/", "_")
+                    safe_model_id = self.model_id.replace("/", "_")
                     outp = output_base / f"{safe_model_id}_{date_str}.jsonl"
 
                     # 3. Get or create the file handle

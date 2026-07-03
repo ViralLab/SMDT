@@ -12,43 +12,25 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from dateutil import parser
 
-from smdt.enrichers.base import BaseEnricher
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
 from smdt.enrichers.registry import register
 from smdt.store.models.account_enrichments import AccountEnrichments
 from smdt.store.standard_db import StandardDB
 
-_MODEL_ID = "bot_detection"
-
 
 @dataclass
-class BotometerConfig:
+class BotometerConfig(EnricherRunConfig):
     """Configuration for BotometerEnricher.
 
     Attributes:
-        only_missing: Skip accounts that already have an enrichment for this model.
-        reset_cache: Clear the local cache of processed account IDs before running.
-        cache_dir: Directory for the local cache file.
-        model_path: Path to the pickled model file. Defaults to ``model.pkl.gz``
-            in the same directory as this module.
-        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
-        output_dir: Required when ``do_save_to_db=False``.
+        model_path: Path to the pickled model file. Defaults to
+            ``bot_detection_model.pkl.gz`` shipped alongside this module.
     """
-    only_missing: bool = True
-    reset_cache: bool = False
-    cache_dir: Optional[str] = None
     model_path: Optional[str] = None
-    do_save_to_db: bool = True
-    output_dir: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        if not self.do_save_to_db:
-            if not self.output_dir:
-                raise ValueError("output_dir is required when do_save_to_db=False")
-            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
 
 
 @register(
-    _MODEL_ID,
+    "bot_detection",
     target="accounts",
     description="Bot detection score for accounts",
     requires=["numpy", "dateutil"],
@@ -59,24 +41,19 @@ class BotometerEnricher(BaseEnricher):
     account_enrichments.  JSONB payload: {"bot_score": float}
     """
 
-    _TARGET = "accounts"
-    _ENRICHER_ID = _MODEL_ID
-
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
-        super().__init__(db, config=config)
-        self.cfg = config if isinstance(config, BotometerConfig) else BotometerConfig(**(config or {}))
-        self.MODEL_ID = _MODEL_ID
+        super().__init__(db)
+        self.cfg = self._coerce_config(config, BotometerConfig)
+        self.model_id = self._make_model_id()
         self.applied_datetime = datetime.now(timezone.utc)
         self.model = None
 
-        if self.cfg.reset_cache:
-            self.cached_ids = set()
-            self.reset_cache()
-        else:
-            self.cached_ids = set(self.load_cached_output_ids_from_file())
+        self._init_cache()
 
     def load_model(self) -> None:
-        model_path = self.cfg.model_path or str(Path(__file__).parent / "model.pkl.gz")
+        model_path = self.cfg.model_path or str(
+            Path(__file__).parent / "bot_detection_model.pkl.gz"
+        )
         with gzip.open(model_path, "rb") as f:
             self.model = pickle.load(f)
 
@@ -91,7 +68,7 @@ class BotometerEnricher(BaseEnricher):
                 "NOT EXISTS (SELECT 1 FROM account_enrichments ae"
                 " WHERE ae.account_id = a.account_id AND ae.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         q = f"SELECT COUNT(DISTINCT a.account_id) FROM accounts a {where_sql}"
@@ -114,7 +91,7 @@ class BotometerEnricher(BaseEnricher):
                 "NOT EXISTS (SELECT 1 FROM account_enrichments ae"
                 " WHERE ae.account_id = a.account_id AND ae.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -210,7 +187,7 @@ class BotometerEnricher(BaseEnricher):
             bot_score = float(self.model.predict_proba(fvec.reshape(1, -1))[:, 1][0])
             out.append(
                 AccountEnrichments(
-                    model_id=self.MODEL_ID,
+                    model_id=self.model_id,
                     account_id=row["account_id"],
                     body={"bot_score": bot_score},
                     created_at=self.applied_datetime,
@@ -311,7 +288,7 @@ class BotometerEnricher(BaseEnricher):
             for r in results:
                 date_str = r.created_at.strftime("%Y-%m-%d")
                 if date_str not in open_files:
-                    outp = output_base / f"{self.MODEL_ID}_{date_str}.jsonl"
+                    outp = output_base / f"{self.model_id}_{date_str}.jsonl"
                     open_files[date_str] = outp.open("a", encoding="utf-8")
                 rec = {
                     "account_id": r.account_id,

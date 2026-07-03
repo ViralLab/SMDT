@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import json
 import os
 
-from smdt.enrichers.base import BaseEnricher
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
@@ -14,38 +14,31 @@ from smdt.store.standard_db import StandardDB
 
 
 @dataclass
-class VLLMEmbeddingConfig:
-    """Configuration for VLLMEmbeddingEnricher.
+class EmbeddingConfig(EnricherRunConfig):
+    """Configuration for EmbeddingEnricher.
 
     Attributes:
         embedding_model_id: Hugging Face model ID or path for the embedding model.
-        model_id_postfix: Suffix appended to form the ``post_enrichments.model_id`` key.
-        base_url: Base URL of the vLLM-compatible embeddings API.
-        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
-        output_dir: Required when ``do_save_to_db=False``.
+        base_url: Base URL of the OpenAI-compatible embeddings API (e.g. a
+            self-hosted vLLM server).
+        model_id_postfix: Optional suffix appended to form the
+            ``post_enrichments.model_id`` key (``"embeddings_<postfix>"``).
+            Leave unset to just use ``"embeddings"``.
         api_key: API key for authenticated endpoints (empty string if not needed).
         batch_size: Number of texts per embeddings API call.
-        reset_cache: Clear the local cache of processed post IDs before running.
-        cache_dir: Directory for the local cache file.
     """
-    embedding_model_id: str
-    model_id_postfix: str
-    base_url: str
-    do_save_to_db: bool
-    output_dir: Optional[str] = None
+    embedding_model_id: str = ""
+    base_url: str = ""
+    model_id_postfix: Optional[str] = None
     api_key: str = ""
     batch_size: int = 1024
-    reset_cache: bool = False
-    cache_dir: Optional[str] = None
 
     def __post_init__(self) -> None:
-        self.model_id_postfix = (self.model_id_postfix or "").strip()
+        super().__post_init__()
         self.embedding_model_id = (self.embedding_model_id or "").strip()
         self.base_url = (self.base_url or "").strip()
         self.api_key = (self.api_key or "").strip()
 
-        if not self.model_id_postfix:
-            raise ValueError("model_id_postfix is required.")
         if not self.embedding_model_id:
             raise ValueError("embedding_model_id is required.")
         if not self.base_url:
@@ -53,65 +46,33 @@ class VLLMEmbeddingConfig:
         if not isinstance(self.batch_size, int) or self.batch_size <= 0:
             raise ValueError("batch_size must be a positive integer.")
 
-        if self.do_save_to_db is None:
-            raise ValueError("do_save_to_db is required and must be a boolean.")
-
-        if not isinstance(self.do_save_to_db, bool):
-            raise ValueError("do_save_to_db must be a boolean.")
-
-        if self.do_save_to_db == False:
-            if not self.output_dir:
-                raise ValueError("output_dir is required when do_save_to_db=False.")
-            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-
 
 @register(
-    "vllm_client",
+    "embeddings",
     target="posts",
-    description="VLLM embeddings via OpenAI-compatible client",
+    description="Text embeddings via an OpenAI-compatible embeddings endpoint (e.g. vLLM)",
     requires=["openai"],
 )
-class VLLMClientEnricher(BaseEnricher):
-    """Computes text embeddings for post bodies via a vLLM-compatible OpenAI API server.
+class EmbeddingEnricher(BaseEnricher):
+    """Computes text embeddings for post bodies via an OpenAI-compatible embeddings API.
 
     Uses the ``openai>=1`` client with a custom ``base_url`` to call the embeddings
-    endpoint in batches.
+    endpoint in batches. Works with vLLM's OpenAI-compatible server, or any other
+    OpenAI-compatible embeddings endpoint.
 
-    - ``model_id`` format: ``"vllm_embedding_<model_id_postfix>"``
+    - ``model_id`` format: ``"embeddings"`` or ``"embeddings_<model_id_postfix>"``
     - JSONB payload: ``{"embedding": [float, ...], "model": str}``
     """
 
-    TARGET = "posts"
-    ENRICHER_ID = "vllm_embedding"  # we'll append a postfix from config
-
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
-        super().__init__(db, config=config)
+        super().__init__(db)
+        self.cfg = self._coerce_config(config, EmbeddingConfig)
 
-        if isinstance(config, VLLMEmbeddingConfig):
-            self.cfg = config
-        else:
-            try:
-                self.cfg = VLLMEmbeddingConfig(**(config or {}))
-            except TypeError as e:
-                raise ValueError(
-                    f"Invalid config keys: {e}. "
-                    "Expected: model_id_postfix, embedding_model_id, base_url, "
-                    "api_key(optional), batch_size(optional), "
-                    "do_save_to_db(optional), output_dir(if saving to file)."
-                ) from e
-
-        # model_id used in post_enrichments.model_id
-        self.MODEL_ID = f"{self._ENRICHER_ID}_{self.cfg.model_id_postfix}"
+        self.model_id = self._make_model_id(self.cfg.model_id_postfix)
         self.applied_datetime = datetime.now(timezone.utc)
         self.client = None  # set in load_model()
 
-        # load the cached IDs
-        if self.cfg.reset_cache:
-            self.cached_ids = set()
-            self.reset_cache()
-        else:
-            self.cached_ids = set(self.load_cached_output_ids_from_file())
-            self.setup_cache_table()
+        self._init_cache()
 
     # ---------------- lifecycle / model ----------------
     def load_model(self) -> None:
@@ -119,8 +80,7 @@ class VLLMClientEnricher(BaseEnricher):
             from openai import OpenAI
         except ImportError as e:
             raise ImportError(
-                "The 'openai' package is required. "
-                "Install with 'pip install smdt[vllm_client]' or 'pip install openai'."
+                "The 'openai' package is required. Install with 'pip install openai'."
             ) from e
 
         self.client = OpenAI(base_url=self.cfg.base_url, api_key=self.cfg.api_key)
@@ -133,7 +93,7 @@ class VLLMClientEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         # Use the real table for exclusion
         if not self.cfg.reset_cache and self.cached_ids:
@@ -160,7 +120,7 @@ class VLLMClientEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         if not self.cfg.reset_cache and self.cached_ids:
             where_clauses.append(
@@ -211,14 +171,11 @@ class VLLMClientEnricher(BaseEnricher):
                     "created_at": created_at,
                     "retrieved_at": self.applied_datetime,
                     "post_id": pid,
-                    "model_id": self.MODEL_ID,
+                    "model_id": self.model_id,
                     "content": payload,  # JSONB
                 }
             )
         return out
-
-    def model_batch_size(self) -> int:
-        return self.cfg.batch_size
 
     # ---- persistence ----
     def save_results(self, results: List[Dict[str, Any]]) -> None:
@@ -258,7 +215,7 @@ class VLLMClientEnricher(BaseEnricher):
                     date_str = c_at.strftime("%Y-%m-%d") if c_at else "unknown"
 
                     # 2. Construct filename: e.g., model_name_2023-10-27.jsonl
-                    safe_model_id = self.MODEL_ID.replace("/", "_")
+                    safe_model_id = self.model_id.replace("/", "_")
                     outp = output_base / f"{safe_model_id}_{date_str}.jsonl"
 
                     # 3. Get or create the file handle

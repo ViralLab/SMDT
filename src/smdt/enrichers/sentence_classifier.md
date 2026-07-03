@@ -22,13 +22,13 @@ pip install torch transformers smdt
 
 ```python
 from smdt.store.standard_db import StandardDB
-from smdt.enrichers.nlp.local.bert_clf.hf_bert_family_sentence_clf import SentenceClfEnricher, ModelConfig
+from smdt.enrichers.sentence_classifier import SentenceClassifierEnricher, SentenceClassifierConfig
 
 # Initialize DB connection
 db = StandardDB(db_name="your_db")
 
 # Setup Config
-config = {
+config = SentenceClassifierConfig(
     hf_model_id="cardiffnlp/twitter-roberta-base-sentiment",
     model_batch_size=16,
     do_save_to_db=False,
@@ -36,9 +36,9 @@ config = {
     model_name="sentiment-roberta",
     only_missing=False,
     reset_cache=False,
-}
+)
 
 # Initialize and Run
-enricher = SentenceClfEnricher(db, config=config)
+enricher = SentenceClassifierEnricher(db, config=config)
 enricher.run()
 ```

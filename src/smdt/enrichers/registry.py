@@ -10,6 +10,11 @@ def register(
 ):
     """Decorator to register an enricher class.
 
+    Also stamps ``TARGET`` and ``ENRICHER_NAME`` onto the class itself, so
+    ``target``/``name`` have exactly one place they're declared, the decorator
+    call, rather than being duplicated (and prone to drifting out of sync) as
+    separate class attributes inside each enricher.
+
     Args:
         name: Unique name for the enricher.
         target: Target entity type (e.g., "posts", "accounts").
@@ -18,6 +23,8 @@ def register(
     """
 
     def decorator(cls):
+        cls.TARGET = target
+        cls.ENRICHER_NAME = name
         _ENRICHERS[name] = {
             "cls": cls,
             "target": target,  # e.g. "posts" | "accounts"

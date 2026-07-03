@@ -1,11 +1,45 @@
 # smdt/enrichers/base.py
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Type, TypeVar
 from pathlib import Path
 import tqdm
 import re
 from uuid import uuid4
+
+ConfigT = TypeVar("ConfigT")
+
+
+@dataclass(kw_only=True)
+class EnricherRunConfig:
+    """Run-behavior settings shared by every enricher.
+
+    Every enricher's own config dataclass should subclass this rather than
+    redeclaring these fields, so there's exactly one definition (and one set
+    of validation rules) instead of one slightly-different copy per file.
+
+    Attributes:
+        only_missing: Skip rows that already have an enrichment for this model.
+        reset_cache: Clear the local cache of processed IDs before running.
+        cache_dir: Directory for the local cache file. Defaults to
+            ``~/.smdt_enricher_cache`` if not set.
+        do_save_to_db: Write results to the database; ``False`` writes JSONL
+            files to ``output_dir`` instead.
+        output_dir: Required when ``do_save_to_db=False``.
+    """
+
+    only_missing: bool = True
+    reset_cache: bool = False
+    cache_dir: Optional[str] = None
+    do_save_to_db: bool = True
+    output_dir: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.do_save_to_db:
+            if not self.output_dir:
+                raise ValueError("output_dir is required when do_save_to_db=False.")
+            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
 
 
 class BaseEnricher(ABC):
@@ -16,30 +50,70 @@ class BaseEnricher(ABC):
     2. Processing the data using a model or algorithm.
     3. Saving the enriched results back to the database.
 
-    Attributes:
-        _TARGET: The target table or entity type (e.g., "posts", "accounts").
-        _ENRICHER_ID: Unique identifier for the enricher.
+    Subclasses are expected to, in their own ``__init__``:
+      1. Call ``super().__init__(db)``.
+      2. Build ``self.cfg`` via ``self._coerce_config(config, MyConfig)``.
+      3. Set ``self.model_id`` (see ``_make_model_id``).
+      4. Call ``self._init_cache()``.
+
+    Class attributes ``TARGET``/``ENRICHER_NAME`` are stamped automatically by
+    the ``@register(...)`` decorator; they should not be redeclared by hand.
     """
 
-    _TARGET: str = "posts"  
-    _ENRICHER_ID: str = "base"  
+    TARGET: ClassVar[str] = "posts"
+    ENRICHER_NAME: ClassVar[str] = "base"
 
-    def __init__(self, db, *, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, db):
         """Initialize the enricher.
 
         Args:
             db: Database connection or handler.
-            config: Optional configuration dictionary.
         """
         self.db = db
-        self.config = config or {}
         self.model = None
+        self.model_id: str = self.ENRICHER_NAME
 
-        self.cache_dir = self.config.get("cache_dir") or str(
-            Path.home() / ".smdt_enricher_cache"
-        )
         self.cache_prefix = "smdt_session_cache_"
         self.generated_temp_table_name = self.cache_prefix + uuid4().hex
+
+    # ---- Config --------------------------------------------------------
+    @staticmethod
+    def _coerce_config(config: Any, config_cls: Type[ConfigT]) -> ConfigT:
+        """Accept a config as a ready instance, a plain dict, or None.
+
+        Args:
+            config: A `config_cls` instance, a dict of its fields, or None.
+            config_cls: The enricher's own config dataclass.
+
+        Returns:
+            A `config_cls` instance.
+
+        Raises:
+            TypeError: If `config` is none of the above.
+        """
+        if config is None:
+            return config_cls()
+        if isinstance(config, config_cls):
+            return config
+        if isinstance(config, dict):
+            return config_cls(**config)
+        raise TypeError(
+            f"config must be a {config_cls.__name__} instance or dict, "
+            f"got {type(config).__name__}"
+        )
+
+    def _make_model_id(self, suffix: Optional[str] = None) -> str:
+        """Build the value stored in `*_enrichments.model_id`.
+
+        Args:
+            suffix: Optional per-instance suffix, for enrichers where one
+                registered enricher can run many different models (e.g. a
+                different HF checkpoint or a different LLM per run).
+
+        Returns:
+            `ENRICHER_NAME`, or `f"{ENRICHER_NAME}_{suffix}"` if given.
+        """
+        return f"{self.ENRICHER_NAME}_{suffix}" if suffix else self.ENRICHER_NAME
 
     # ---- Lifecycle ---------------------------------------------------------
     def setup(self) -> None:
@@ -64,9 +138,26 @@ class BaseEnricher(ABC):
         """
         pass
 
+    # ---- Cache ---------------------------------------------------------
+    def _init_cache(self) -> None:
+        """Load or reset the on-disk/DB cache of already-processed IDs.
+
+        Every enricher should call this once in `__init__`, after `self.cfg`
+        and `self.model_id` are set, instead of duplicating this logic itself.
+        Requires `self.cfg` to expose `cache_dir`/`reset_cache` (i.e. subclass
+        from `EnricherRunConfig`).
+        """
+        self.cache_dir = self.cfg.cache_dir or str(Path.home() / ".smdt_enricher_cache")
+        if self.cfg.reset_cache:
+            self.cached_ids = set()
+            self.reset_cache()
+        else:
+            self.cached_ids = set(self.load_cached_output_ids_from_file())
+            self.setup_cache_table()
+
     def reset_cache(self) -> None:
         """Reset the cache by clearing cached IDs."""
-        cache_file = Path(self.cache_dir) / f"{self._ENRICHER_ID}_cached_ids.txt"
+        cache_file = Path(self.cache_dir) / f"{self.model_id}_cached_ids.txt"
         if cache_file.exists():
             cache_file.unlink()
 
@@ -88,7 +179,7 @@ class BaseEnricher(ABC):
         """
         # ensure cache directory exists
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
-        cache_file = Path(self.cache_dir) / f"{self._ENRICHER_ID}_cached_ids.txt"
+        cache_file = Path(self.cache_dir) / f"{self.model_id}_cached_ids.txt"
         # append to the file
         with open(cache_file, "a") as f:
             for id_ in ids:
@@ -99,7 +190,7 @@ class BaseEnricher(ABC):
             return
 
         # Create a safe table name (e.g., cache_bert_sentiment)
-        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self._ENRICHER_ID).lower()
+        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", self.model_id).lower()
         self.cache_table_name = f"cache_ids_{safe_name}"
 
         conn = self.db.connect()
@@ -130,7 +221,7 @@ class BaseEnricher(ABC):
             Iterable of cached IDs.
         """
         # check if cache file exists
-        cache_file = Path(self.cache_dir) / f"{self._ENRICHER_ID}_cached_ids.txt"
+        cache_file = Path(self.cache_dir) / f"{self.model_id}_cached_ids.txt"
         if not cache_file.exists():
             return []
 

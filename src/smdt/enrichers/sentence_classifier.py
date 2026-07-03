@@ -1,143 +1,113 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import json
 import re
 import math
+from tqdm.auto import trange
 
 
-from smdt.enrichers.base import BaseEnricher
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
 from smdt.store.standard_db import StandardDB
 
-
 try:
     import torch
+    import torch.nn.functional as F
 except ImportError as e:
     raise ImportError(
-        "The 'torch' package is required. " "Install with 'pip install torch'."
+        "The 'torch' package is required. Install with 'pip install torch'."
     ) from e
 
 
 # ----------------------- Config -----------------------
 @dataclass
-class DetoxifyConfig:
-    """Configuration for DetoxifyToxicityEnricher.
+class SentenceClassifierConfig(EnricherRunConfig):
+    """Configuration for SentenceClassifierEnricher.
 
     Attributes:
-        model_name: Detoxify variant. One of: ``original``, ``unbiased``,
-            ``multilingual``, ``original-small``, ``unbiased-small``.
+        hf_model_id: Hugging Face model ID or local path. Always required,
+            whatever the checkpoint.
         model_batch_size: Number of texts per forward pass.
         max_seq_len: Tokenizer truncation length.
         device: Inference device — ``"cuda"``, ``"cpu"``, or ``None`` (auto-detect).
-        only_missing: Skip posts that already have an enrichment for this model.
-        do_save_to_db: Write results to the database; ``False`` writes JSONL files instead.
-        output_dir: Required when ``do_save_to_db=False``.
-        hf_model_id: Override the Hugging Face model checkpoint (advanced).
-        hf_tokenizer_id: Override the Hugging Face tokenizer (advanced).
-        reset_cache: Clear the local cache of processed post IDs before running.
-        cache_dir: Directory for the local cache file.
+        hf_peft_adapter_id: Optional PEFT/LoRA adapter ID loaded on top of the base model.
+        hf_tokenizer_id: Override the Hugging Face tokenizer.
+        model_name: Human-readable name used as part of ``post_enrichments.model_id``.
+        is_multilabel: Apply sigmoid instead of softmax (multi-label classification).
+        model_kwargs: Extra keyword arguments forwarded to
+            ``AutoModelForSequenceClassification.from_pretrained`` -- for
+            whatever a specific checkpoint needs that isn't common enough to
+            be a named field here (e.g. ``trust_remote_code``, ``torch_dtype``).
+        tokenizer_kwargs: Extra keyword arguments forwarded to
+            ``AutoTokenizer.from_pretrained``.
     """
-    model_name: str = "multilingual"
+    hf_model_id: str = ""
     model_batch_size: int = 8
     max_seq_len: int = 256
     device: Optional[str] = None
-    only_missing: bool = True
-    do_save_to_db: bool = True
-    output_dir: Optional[str] = None
-    hf_model_id: Optional[str] = None
+    hf_peft_adapter_id: Optional[str] = None
     hf_tokenizer_id: Optional[str] = None
-    reset_cache: bool = False
-    cache_dir: Optional[str] = None
+    model_name: str = "generic_classifier"
+    is_multilabel: bool = False
+    model_kwargs: Dict[str, Any] = field(default_factory=dict)
+    tokenizer_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.hf_model_id:
+            raise ValueError("hf_model_id is required.")
         if self.model_batch_size <= 0:
             raise ValueError("model_batch_size must be > 0")
-        if not self.do_save_to_db:
-            if not self.output_dir:
-                raise ValueError("output_dir is required when do_save_to_db=False")
-            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-
-        if self.model_name not in {
-            "original",
-            "unbiased",
-            "multilingual",
-            "original-small",
-            "unbiased-small",
-        }:
-            raise ValueError(
-                f"model_name '{self.model_name}' is not one of the supported Detoxify variants."
-            )
 
 
 # ----------------------- Enricher -----------------------
 
 
 @register(
-    "detoxify_toxicity",
+    "sentence_classifier",
     target="posts",
-    description="Multilingual toxicity scoring (Detoxify) via Transformers",
-    requires=["torch", "transformers"],  # soft dep check
+    description="A generic sentence-level classification model (Binary or Multi-class).",
+    requires=["torch", "transformers"],
 )
-class DetoxifyToxicityEnricher(BaseEnricher):
-    """Scores post text for toxicity using a Detoxify transformer checkpoint.
+class SentenceClassifierEnricher(BaseEnricher):
+    """Generic Hugging Face sentence classifier for post text.
 
-    - ``model_id`` format: ``"toxicity_<model_name>"``
-    - JSONB payload: ``{"scores": {label: float, ...}, "logits": {label: float, ...}, "vendor": "detoxify", "model_name": str}``
+    Loads any Hugging Face sequence-classification checkpoint (optionally with a
+    PEFT/LoRA adapter) and scores post bodies. Supports binary, multi-class, and
+    multi-label classification.
+
+    - ``model_id`` format: ``"sentence_classifier_<model_name>"``
+    - JSONB payload: ``{"label": str, "score": float, "all_scores": {label: float, ...}}``
     """
 
-    TARGET = "posts"
-
-    # Canonical Detoxify class sets (after renaming severe_toxic->severe_toxicity, identity_hate->identity_attack)
-    _CLASS_NAMES_DEFAULT = [
-        "toxicity",
-        "severe_toxicity",
-        "obscene",
-        "threat",
-        "insult",
-        "identity_attack",
-        "sexual_explicit",
-    ]
-
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
-        super().__init__(db, config=config)
-
-        if isinstance(config, DetoxifyConfig):
-            self.cfg = config
-        else:
-            self.cfg = DetoxifyConfig(**(config or {}))
-
+        super().__init__(db)
+        self.cfg = self._coerce_config(config, SentenceClassifierConfig)
         self.device = (
             self.cfg.device
             if self.cfg.device is not None
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
 
-        self.MODEL_ID = f"toxicity_{self.cfg.model_name}"
+        self.model_id = self._make_model_id(self.cfg.model_name)
         self.applied_datetime = datetime.now(timezone.utc)
 
         self.model = None
         self.tokenizer = None
-        self.class_names: List[str] = self._CLASS_NAMES_DEFAULT
+        self.class_names: List[str] = []
 
-        # load the cached IDs
-        if self.cfg.reset_cache:
-            self.cached_ids = set()
-            self.reset_cache()
-        else:
-            self.cached_ids = set(self.load_cached_output_ids_from_file())
+        self._init_cache()
 
-    # --------------- lifecycle ----------------
     def load_model(self) -> None:
         """
-        Loads a transformers classifier & tokenizer compatible with Detoxify checkpoints.
-        Tries to auto-derive class names; falls back to defaults if not available.
+        Loads classifier and tokenizer. Automatically detects class labels
+        from model config and handles multi-GPU setups.
         """
-
         try:
             from transformers import (
                 AutoConfig,
@@ -145,49 +115,35 @@ class DetoxifyToxicityEnricher(BaseEnricher):
                 AutoTokenizer,
             )
         except ImportError as e:
-            raise ImportError(
-                "The 'transformers' package is required. "
-                "Install with 'pip install transformers'."
-            ) from e
+            raise ImportError("The 'transformers' package is required.") from e
 
-        # Choose HF model ids. You can map your preferred checkpoints here.
-        # These are common choices compatible with Detoxify label space.
-        model_map = {
-            "original": "unitary/toxic-bert",
-            "unbiased": "unitary/unbiased-toxic-roberta",
-            "multilingual": "unitary/multilingual-toxic-xlm-roberta",
-            "original-small": "unitary/toxic-bert",  # fallback to nearest
-            "unbiased-small": "unitary/unbiased-toxic-roberta",
-        }
+        # Load config to extract labels
+        config = AutoConfig.from_pretrained(self.cfg.hf_model_id, **self.cfg.model_kwargs)
 
-        model_id = self.cfg.hf_model_id or model_map.get(self.cfg.model_name)
-        tok_id = self.cfg.hf_tokenizer_id or model_id
-        if not model_id:
-            raise ValueError(
-                f"Unknown model_name '{self.cfg.model_name}' and no hf_model_id provided"
-            )
-
-        config = AutoConfig.from_pretrained(
-            model_id, num_labels=len(self._CLASS_NAMES_DEFAULT)
-        )
-        # try to extract label names if present
+        # Determine class names: use id2label if available, else generic names
         id2label = getattr(config, "id2label", None)
         if id2label:
-            # Normalize label names
-            labels = [id2label[i] for i in sorted(id2label)]
-            rename_map = {
-                "toxic": "toxicity",
-                "identity_hate": "identity_attack",
-                "severe_toxic": "severe_toxicity",
-            }
-            self.class_names = [rename_map.get(c.lower(), c).lower() for c in labels]
+            # Sort by keys to ensure correct order
+            self.class_names = [id2label[i] for i in sorted(id2label.keys())]
         else:
-            self.class_names = self._CLASS_NAMES_DEFAULT
+            num_labels = getattr(config, "num_labels", 1)
+            self.class_names = [f"label_{i}" for i in range(num_labels)]
 
-        self.tokenizer = AutoTokenizer.from_pretrained(tok_id, use_fast=False)
-        model = AutoModelForSequenceClassification.from_pretrained(model_id)
+        tok_id = self.cfg.hf_tokenizer_id or self.cfg.hf_model_id
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tok_id, use_fast=True, **self.cfg.tokenizer_kwargs
+        )
+        model = AutoModelForSequenceClassification.from_pretrained(
+            self.cfg.hf_model_id, **self.cfg.model_kwargs
+        )
 
-        # enable multi-GPU if available
+        if self.cfg.hf_peft_adapter_id:
+            try:
+                from peft import PeftModel
+                model = PeftModel.from_pretrained(model, self.cfg.hf_peft_adapter_id)
+            except ImportError as e:
+                raise ImportError("The 'peft' package is required to load PEFT/LoRA adapters.") from e
+
         if (
             torch.cuda.is_available()
             and torch.cuda.device_count() > 1
@@ -198,7 +154,6 @@ class DetoxifyToxicityEnricher(BaseEnricher):
         self.model = model.to(self.device)
         self.model.eval()
 
-    # --------------- selection ----------------
     def total_count(self) -> int:
         where_clauses = ["p.body IS NOT NULL", "p.body <> ''"]
         params = []
@@ -207,7 +162,7 @@ class DetoxifyToxicityEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         # Use the real table for exclusion
         if not self.cfg.reset_cache and self.cached_ids:
@@ -234,7 +189,7 @@ class DetoxifyToxicityEnricher(BaseEnricher):
             where_clauses.append(
                 "NOT EXISTS (SELECT 1 FROM post_enrichments pe WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
             )
-            params.append(self.MODEL_ID)
+            params.append(self.model_id)
 
         if not self.cfg.reset_cache and self.cached_ids:
             where_clauses.append(
@@ -257,16 +212,12 @@ class DetoxifyToxicityEnricher(BaseEnricher):
     _MENTION_RE = re.compile(r"@\w+", flags=re.UNICODE)
 
     def _clean(self, text: str) -> str:
-        # Lightweight cleanup; mirror your previous logic
         return self._MENTION_RE.sub("@user", text or "")
 
-    def _predict_batch(self, texts: List[str]) -> List[Dict[str, float]]:
+    def _predict_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
         if self.model is None or self.tokenizer is None:
             self.load_model()
 
-        from torch.nn.functional import sigmoid
-
-        # tokenize
         enc = self.tokenizer(
             texts,
             return_tensors="pt",
@@ -278,96 +229,103 @@ class DetoxifyToxicityEnricher(BaseEnricher):
         with torch.no_grad():
             outputs = self.model(**enc)
             logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
-            probs = sigmoid(logits).detach().cpu()
 
-        out: List[Dict[str, float]] = []
-        for logit, prob in zip(logits, probs):
-            out.append(
+            # if multilabel -> Sigmoid
+            # If num_labels > 1 -> Softmax (probabilities sum to 1 across labels)
+            # If num_labels == 1 -> Sigmoid (independent probability)
+            num_labels = logits.shape[-1]
+            if self.cfg.is_multilabel:
+                probs = torch.sigmoid(logits)
+            elif num_labels > 1:
+                probs = F.softmax(logits, dim=-1)
+            else:
+                probs = torch.sigmoid(logits)
+
+            probs_np = probs.cpu().numpy()
+            logits_np = logits.cpu().numpy()
+
+        results: List[Dict[str, Any]] = []
+        for i in range(len(texts)):
+            row_probs = probs_np[i]
+            row_logits = logits_np[i]
+
+            results.append(
                 {
                     "scores": {
-                        name: float(score)
-                        for name, score in zip(self.class_names, prob)
+                        name: float(p) for name, p in zip(self.class_names, row_probs)
                     },
                     "logits": {
-                        name: float(l) for name, l in zip(self.class_names, logit)
+                        name: float(l) for name, l in zip(self.class_names, row_logits)
                     },
                 }
             )
-        return out
+        return results
 
     def process_batch(self, rows: List[Dict[str, Any]]) -> List[PostEnrichments]:
-        """
-        Runs toxicity on rows=[{post_id, body}, ...] in internal model batches
-        and returns PostEnrichments objects.
-        """
         if not rows:
             return []
 
-        # collect & clean
-        post_ids: List[int] = []
-        texts: List[str] = []
-        created_ats: List[Optional[datetime]] = []
-        for r in rows:
-            pid = r["post_id"]
-            body = (r.get("body") or "").strip()
-            if body:
-                post_ids.append(pid)
-                texts.append(self._clean(body))
-                created_ats.append(r.get("created_at"))
-
+        post_ids = [r["post_id"] for r in rows if (r.get("body") or "").strip()]
+        texts = [self._clean(r["body"]) for r in rows if (r.get("body") or "").strip()]
+        post_created_ats = [
+            r.get("created_at") or self.applied_datetime
+            for r in rows
+            if (r.get("body") or "").strip()
+        ]
         if not texts:
             return []
 
-        # slice into model batches
         out: List[PostEnrichments] = []
-        n = len(texts)
         mb = self.cfg.model_batch_size
 
-        for i in range(0, n, mb):
+        for i in trange(0, len(texts), mb):
             chunk_ids = post_ids[i : i + mb]
             chunk_txt = texts[i : i + mb]
-            chunk_created_ats = created_ats[i : i + mb]
-            scores = self._predict_batch(chunk_txt)
+            chunk_created_ats = post_created_ats[i : i + mb]
+            batch_results = self._predict_batch(chunk_txt)
 
-            for pid, created_at, sc in zip(chunk_ids, chunk_created_ats, scores):
+            for pid, created_at, res in zip(
+                chunk_ids, chunk_created_ats, batch_results
+            ):
                 payload = {
-                    "vendor": "detoxify",
-                    "model_name": self.cfg.model_name,
-                    "scores": sc["scores"],
-                    "logits": sc["logits"],
+                    "vendor": "huggingface",
+                    "model_name": self.cfg.hf_model_id,
+                    "scores": res["scores"],
+                    "logits": res["logits"],
                 }
                 out.append(
                     {
                         "created_at": created_at,
                         "retrieved_at": self.applied_datetime,
                         "post_id": pid,
-                        "model_id": self.MODEL_ID,
+                        "model_id": self.model_id,
                         "body": payload,
                     }
                 )
         return out
-
-    def model_batch_size(self) -> int:
-        # DB page size hint for runner
-        return self.cfg.batch_size
 
     # --------------- persistence ----------------
     def save_results(self, results: List[Dict[str, Any]]) -> None:
         if not results:
             return
         if self.cfg.do_save_to_db:
-            results = [
-                PostEnrichments(
-                    created_at=r["created_at"],
-                    retrieved_at=self.applied_datetime,
-                    post_id=r["post_id"],
-                    model_id=r["model_id"],
-                    body=r["body"],  # JSONB
-                )
-                for r in results
-            ]
-            self.db.insert_with_fallbacks(results)  # COPY → multi-values → row-by-row
-            print(f"[INFO] Saved {len(results)} rows to post_enrichments.")
+            try:
+                results = [
+                    PostEnrichments(
+                        created_at=r["created_at"],
+                        retrieved_at=self.applied_datetime,
+                        post_id=r["post_id"],
+                        model_id=r["model_id"],
+                        body=r["body"],  # JSONB
+                    )
+                    for r in results
+                ]
+
+                self.db.insert_with_fallbacks(results)
+
+                self.write_current_cache_ids_to_file([r.post_id for r in results])
+            except Exception as e:
+                print(f"[ERROR] Failed to insert results: {e}")
         else:
             # Grouping results by the created_at day and storing in separate files
             output_base = Path(self.cfg.output_dir or ".")
@@ -383,7 +341,7 @@ class DetoxifyToxicityEnricher(BaseEnricher):
                     date_str = c_at.strftime("%Y-%m-%d") if c_at else "unknown"
 
                     # 2. Construct filename: e.g., model_name_2023-10-27.jsonl
-                    safe_model_id = self.MODEL_ID.replace("/", "_")
+                    safe_model_id = self.model_id.replace("/", "_")
                     outp = output_base / f"{safe_model_id}_{date_str}.jsonl"
 
                     # 3. Get or create the file handle
