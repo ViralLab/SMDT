@@ -34,7 +34,7 @@ Unlock insights from your social media data.
 Ensure your data is safe to share.
 
 - **[Pseudonymization](./pseudonymization.md)**  
-  Learn how to pseudonymize identifiers and redact sensitive text using the built-in Pseudonymizer and configurable policies.
+  Learn how to pseudonymize identifiers and redact sensitive text using the built-in Pseudonymizer and configurable policies, detect broader PII with the optional Presidio-based engine, and handle GDPR erasure requests.
 
 ## Analysis
 

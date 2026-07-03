@@ -8,6 +8,7 @@ SMDT provides a built-in `Pseudonymizer` to process a source database into a des
 - **Redaction**: Detects and replaces sensitive entities (like @mentions) in text fields.
 - **PII Detection**: Optional [Presidio](https://github.com/data-privacy-stack/presidio)-based scanning of free text for broader identifier-grade PII (phone numbers, emails, credit cards, person names, ...), on top of platform-aware `@mention`/`#hashtag` handling.
 - **Configurable Policy**: Define per-table rules for what to hash, redact, drop, or blank out.
+- **GDPR Erasure**: Delete or scrub a specific person's data on request, across the raw and/or pseudonymized database, without corrupting other people's replies or interactions.
 - **Batched Processing**: memory-efficient processing of large tables.
 
 ## Basic Usage
@@ -162,4 +163,41 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
+
+## Erasure (GDPR "Right to be Forgotten")
+
+`Eraser` handles requests to delete or scrub a specific person's data, across one or more databases (the raw source, the pseudonymized destination, or both). Identity resolution is **forward-only**: you always supply the person's real, known identity (their `account_id` or `username`), and `Eraser` either matches it literally (plaintext DB) or recomputes its pepper-keyed hash to match against a pseudonymized DB. There is no reverse-mapping table — you can't look up "who is this pseudonym" from `Eraser`, by design.
+
+Two modes, chosen independently per target database:
+
+- **`DELETE`** — hard-removes the account and their posts.
+- **`SCRUB`** — nulls out personal columns (bio, body, username, profile fields, engagement counts) but keeps the row shell, so replies and interactions from *other* people that reference this person's posts stay structurally intact instead of pointing at nothing.
+
+Either way, `Eraser` never deletes *other people's* data just because it references the erased person:
+
+- Posts scrubbed (not deleted) so replies threaded to them still resolve.
+- `actions` where the person is the *originator* (their own likes/comments/shares) are removed. `actions` where they're only the *target* (someone else's like/follow/comment aimed at them) keep the row — it's the other person's behavioral record — with just the reference to the erased person cleared.
+- `entities` and `account_enrichments`/`post_enrichments` belonging to the erased person are removed outright (nothing else references these rows).
+
+```python
+from smdt.pseudonymizer import Eraser, ErasureTarget, ErasureMode
+from smdt.config import PseudonymizationVariables
+
+pseudo_vars = PseudonymizationVariables()
+
+eraser = Eraser(
+    targets=[
+        # Raw DB: plaintext, hard delete.
+        ErasureTarget(db_name="social_media_raw", mode=ErasureMode.DELETE, is_pseudonymized=False),
+        # Published/shared DB: already pseudonymized, scrub in place.
+        ErasureTarget(db_name="social_media_public", mode=ErasureMode.SCRUB, is_pseudonymized=True),
+    ],
+    pepper=pseudo_vars.pepper,   # required whenever a target is_pseudonymized=True
+)
+
+report = eraser.erase("real_account_id_123", identity_column="account_id")
+print(report)
+# {"social_media_raw": {"matched_account_ids": [...], "accounts_deleted": 1, "posts_deleted": 3, ...},
+#  "social_media_public": {"matched_account_ids": [...], "accounts_scrubbed": 1, "posts_scrubbed": 3, ...}}
 ```
