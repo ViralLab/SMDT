@@ -21,14 +21,13 @@ class Algorithm(str, Enum):
     SHA256 = "sha256"
     SHA512 = "sha512"
     WHIRLPOOL = "whirlpool"
-    MD5 = "md5"  # discouraged; allowed for compatibility
 
 
 @dataclass(frozen=True)
 class Hasher:
     """Deterministic, keyed pseudonymization via HMAC-like construction.
 
-    We *always* use a secret pepper. Even if the user chooses MD5/Whirlpool/SHAx,
+    We *always* use a secret pepper. Even if the user chooses Whirlpool/SHAx,
     we wrap it with a keyed construction to avoid rainbow-table reversals.
 
     - NULL handling: caller must avoid passing None if they want a value; we
@@ -39,7 +38,6 @@ class Hasher:
 
     algo: Algorithm
     pepper: bytes
-    output_hex_len: int = 64
     normalizer: Optional[Callable[[str], str]] = None
 
     def _get_hash_function(self):
@@ -56,8 +54,6 @@ class Hasher:
             return hashlib.sha256
         if self.algo == Algorithm.SHA512:
             return hashlib.sha512
-        if self.algo == Algorithm.MD5:
-            return hashlib.md5
         if self.algo == Algorithm.WHIRLPOOL:
             if not _HAVE_WHIRLPOOL:
                 raise RuntimeError(
@@ -102,7 +98,7 @@ class Hasher:
         else:
             d1 = hfn(self.pepper + b"\x00" + data + b"\xff").digest()
             d2 = hfn(self.pepper + b"\x01" + d1 + b"\xee").hexdigest()
-        return d2[: self.output_hex_len]
+        return d2
 
     def make(self, value: Optional[str]) -> Optional[str]:
         """Return pseudonymized hex string, or None if input is None.

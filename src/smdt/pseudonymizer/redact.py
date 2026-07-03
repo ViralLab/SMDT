@@ -16,6 +16,40 @@ except Exception:  # pragma: no cover
     _UNICODE = False
 
 
+def normalize_host(url_or_host: Optional[str]) -> Optional[str]:
+    """Extract and normalize the hostname from a URL or host string.
+
+    Standalone so it can be reused outside Redactor (e.g. by PiiPolicy's
+    URL-to-domain rule in pii_policy.py).
+
+    Args:
+        url_or_host: URL or hostname string.
+
+    Returns:
+        Normalized hostname, or None if extraction fails.
+    """
+    if not url_or_host:
+        return None
+    s = url_or_host.strip()
+    try:
+        parsed = urlparse(
+            s if s.startswith(("http://", "https://")) else "http://" + s
+        )
+        host = parsed.hostname or s
+    except Exception:
+        host = s
+    if not host:
+        return None
+    host = host.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    try:
+        host = host.encode("idna").decode("ascii")
+    except Exception:
+        pass
+    return host
+
+
 @dataclass
 class Redactor:
     """Redacts sensitive information from text.
@@ -46,26 +80,7 @@ class Redactor:
         Returns:
             Normalized hostname, or None if extraction fails.
         """
-        if not url_or_host:
-            return None
-        s = url_or_host.strip()
-        try:
-            parsed = urlparse(
-                s if s.startswith(("http://", "https://")) else "http://" + s
-            )
-            host = parsed.hostname or s
-        except Exception:
-            host = s
-        if not host:
-            return None
-        host = host.lower()
-        if host.startswith("www."):
-            host = host[4:]
-        try:
-            host = host.encode("idna").decode("ascii")
-        except Exception:
-            pass
-        return host
+        return normalize_host(url_or_host)
 
     def redact(self, text: Optional[str]) -> Optional[str]:
         """Redact sensitive information from text.

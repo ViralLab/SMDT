@@ -9,6 +9,7 @@ from ..store.models import MODEL_REGISTRY
 from .pseudonyms import Hasher, Algorithm
 from .redact import Redactor
 from .policy import PseudonymPolicy, DEFAULT_POLICY
+from .pii_policy import PiiPolicy
 
 import time
 import logging, sys
@@ -33,26 +34,40 @@ class PseudonymizeConfig:
         dst_db_name: Name of the destination database.
         pepper: Secret pepper for hashing.
         algorithm: Hashing algorithm to use.
-        output_hex_len: Length of the output hex string.
         schema_package: Package containing the schema resource.
         schema_resource: Name of the schema resource file.
         time_window: Optional tuple of (start, end) ISO strings for filtering by created_at.
         chunk_rows: Number of rows to process in each batch.
         owner_schema: Optional owner schema for the destination database.
         ask_reinit: Whether to ask for confirmation before reinitializing the destination schema.
+        pii_policy: Optional PiiPolicy enabling the Presidio-based PII detection
+            engine for free-text columns (bio/body). If None (default), those
+            columns fall back to the dependency-free regex-based Redactor
+            (mentions/emails/URLs only) — the Presidio engine is strictly opt-in
+            since it requires the "pii" extra (presidio-analyzer/-anonymizer)
+            and a configured NLP model.
+        nlp_configuration: Presidio NlpEngineProvider config (language model
+            selection). Only used if pii_policy is set. See PiiEngine for the
+            expected shape; if omitted, Presidio's own default model is used
+            and a language-coverage warning is logged.
+        custom_pii_recognizers: Extra PatternRecognizers scoped per
+            (table, column), layered on top of the built-in platform ones.
+            Only used if pii_policy is set.
     """
 
     src_db_name: str
     dst_db_name: str
     pepper: bytes
     algorithm: Algorithm = Algorithm.SHA256
-    output_hex_len: int = 64
     schema_package: str = "smdt.store.schemas"
     schema_resource: str = "pseudo_std_schema.sql"
     time_window: Optional[Tuple[str, str]] = None
     chunk_rows: int = 1_000
     owner_schema: Optional[str] = None
     ask_reinit: bool = True
+    pii_policy: Optional[PiiPolicy] = None
+    nlp_configuration: Optional[Dict[str, Any]] = None
+    custom_pii_recognizers: Optional[Dict[Tuple[str, str], List[Any]]] = None
 
 
 class Pseudonymizer:
@@ -77,8 +92,10 @@ class Pseudonymizer:
         self.hasher = Hasher(
             algo=cfg.algorithm,
             pepper=cfg.pepper,
-            output_hex_len=cfg.output_hex_len,
-            normalizer=lambda s: s.strip(),
+            # Lowercase so e.g. accounts.username="JohnDoe" hashes identically to
+            # a "@JohnDoe" mention found in free text (Redactor also lowercases
+            # handles before hashing) — keeps pseudonyms consistent across columns.
+            normalizer=lambda s: s.strip().lower(),
         )
 
         domain_mapper = lambda host: host
@@ -86,6 +103,16 @@ class Pseudonymizer:
             handle_mapper=lambda h: self.hasher.make(h) or "",
             map_host=domain_mapper,
         )
+
+        self.pii_engine = None
+        if cfg.pii_policy is not None:
+            from .pii_engine import PiiEngine
+
+            self.pii_engine = PiiEngine(
+                hasher=self.hasher,
+                nlp_configuration=cfg.nlp_configuration,
+                custom_recognizers=cfg.custom_pii_recognizers,
+            )
 
     def prepare_destination(self) -> None:
         """Initialize the destination database schema.
@@ -275,13 +302,21 @@ class Pseudonymizer:
             )
             return out
 
+        platform = row.get("platform")
         for col, val in row.items():
             if self.policy.is_drop(table, col):
                 continue
             if self.policy.is_hash(table, col):
                 out[col] = self.hasher.make(val)
             elif self.policy.is_redact(table, col):
-                out[col] = self.redactor.redact(val)
+                if self.pii_engine is not None and self.cfg.pii_policy.is_configured(
+                    table, col
+                ):
+                    out[col] = self.pii_engine.redact(
+                        val, table, col, self.cfg.pii_policy, platform=platform
+                    )
+                else:
+                    out[col] = self.redactor.redact(val)
             elif self.policy.is_blank(table, col):
                 out[col] = None
             else:

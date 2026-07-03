@@ -10,7 +10,6 @@ cfg = PseudonymizeConfig(
     dst_db_name="db_pseudo",
     pepper=pseudo_vars.pepper,
     algorithm=Algorithm.SHA256,
-    output_hex_len=64,
     ask_reinit=True,
     chunk_rows=5_000,
 )
