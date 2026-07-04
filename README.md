@@ -311,16 +311,25 @@ SMDT/
 
 ## Data Model
 
-SMDT normalizes data into four primary tables. If creating a new standardizer, ensure your output maps to these fields:
-
+SMDT normalizes data into five core tables. If creating a new standardizer, ensure your output maps to these fields:
 
 | Table | Key Fields |
 | :--- | :--- |
-| **Communities** | `community_id`, `community_type`(CHANNEL/GROUP), `community_username`, `community_name`, `bio`, `is_public`, `member_count`, `post_count`, `profile_image_url`, `owner_account_id`, `created_at`, `retrieved_at`  |
-| **Accounts** | `account_id`, `username`, `profile_name`, `bio`, `location`, `post_count`,`friend_count`, `follower_count`, `is_verified`, `profile_image_url`,  `created_at`, `retrieved_at`|
-| **Posts** | `post_id`, `account_id`, `conversation_id`, `community_id`, `body`, `like_count`, `dislike_count`, `view_count`, `share_count`, `comment_count`, `quote_count`, `bookmark_count`|
-| **Entities** | `account_id`, `community_id`, `post_id` , `body`, `entity_type` (e.g HASHTAG), `created_at`, `retrieved_at` |
-| **Actions** | `originator_account_id`, `originator_post_id`, `target_account_id`, `target_post_id`, `originator_community_id`, `target_community_id`, `action_type` (e.g SHARE), `created_at`, `retrieved_at` |
+| **Communities** | `community_id`, `community_type` (CHANNEL/GROUP), `community_username`, `community_name`, `bio`, `is_public`, `member_count`, `post_count`, `profile_image_url`, `owner_account_id`, `platform`, `created_at`, `retrieved_at` |
+| **Accounts** | `account_id`, `username`, `profile_name`, `bio`, `location`, `post_count`, `friend_count`, `follower_count`, `is_verified`, `profile_image_url`, `platform`, `created_at`, `retrieved_at` |
+| **Posts** | `post_id`, `account_id`, `conversation_id`, `community_id`, `body`, `like_count`, `dislike_count`, `view_count`, `share_count`, `comment_count`, `quote_count`, `bookmark_count`, `location`, `platform`, `created_at`, `retrieved_at` |
+| **Entities** | `account_id`, `community_id`, `post_id`, `body`, `entity_type` (e.g. HASHTAG), `created_at`, `retrieved_at` |
+| **Actions** | `originator_account_id`, `originator_post_id`, `target_account_id`, `target_post_id`, `originator_community_id`, `target_community_id`, `action_type` (e.g. SHARE), `created_at`, `retrieved_at` |
+
+`platform` is the canonical source platform (e.g. `"twitter"`, `"weibo"`) and drives platform-aware behavior elsewhere in the toolkit (e.g. mention/hashtag pattern selection in `pseudonymizer`).
+
+Beyond the core tables, a few auxiliary tables support enrichment and dataset bookkeeping rather than standardizer output:
+
+| Table | Key Fields | Written by |
+| :--- | :--- | :--- |
+| **PostEnrichments** (`post_enrichments`) | `post_id`, `model_id`, `body` (JSONB), `created_at`, `retrieved_at` | The [enrichment framework](#4-enrich-data) — one row per `(post_id, model_id)`. |
+| **AccountEnrichments** (`account_enrichments`) | `account_id`, `model_id`, `body` (JSONB), `created_at`, `retrieved_at` | The enrichment framework — one row per `(account_id, model_id)`. |
+| **DatasetMeta** (`dataset_meta`) | `platform`, `standardizer_name`, `dataset_description`, `created_at`, `updated_at` | One row per database, describing the dataset ingested into it. |
 
 --- 
 ----------
