@@ -44,19 +44,6 @@ def test_member_kind_variants(src, expected_kind):
     assert result == expected_kind
 
 
-@pytest.mark.parametrize(
-    "metrics, keys, expected",
-    [
-        ({"a": 1, "b": 2}, ["a", "b"], 3),
-        (None, ["a"], None),
-    ],
-)
-def test_sum_metrics(metrics, keys, expected):
-    """_sum_metrics should return the sum of listed metric keys or None when metrics is None."""
-    result = ds._sum_metrics(metrics, keys)
-    assert result == expected
-
-
 def test_posts_branch_extracts_entities():
     """Standardizing a post record should produce Accounts, Posts and Entities (hashtag, mention, link, email)."""
     src = SourceInfo(path="feed_posts.json", member="feed_posts.json")

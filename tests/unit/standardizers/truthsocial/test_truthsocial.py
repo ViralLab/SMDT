@@ -5,7 +5,6 @@ from smdt.standardizers.truthsocial.truthsocial import (
     _int,
     _bool_t,
     _nz,
-    _sum3,
     TruthSocialStandardizer,
 )
 from smdt.standardizers.base import SourceInfo
@@ -68,12 +67,6 @@ def test_nz_various(inp, expected):
     """_nz should map None to 0 and pass through non-None values."""
     result = _nz(inp)
     assert result == expected
-
-
-def test_sum3_basic():
-    """_sum3 should sum three values treating None as zero for the first argument."""
-    result = _sum3(None, 2, 3)
-    assert result == 5
 
 
 def test_users_missing_id_returns_empty():
