@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -8,7 +8,7 @@ import re
 import math
 
 
-from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig, RowPreprocessor
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
@@ -23,10 +23,29 @@ except ImportError as e:
     ) from e
 
 
+_MENTION_RE = re.compile(r"@\w+", flags=re.UNICODE)
+
+
+def default_mention_preprocessor(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Collapse any @mention-shaped token in `body` to the generic `@user`.
+
+    Detoxify-style checkpoints were pretrained expecting a single generic
+    mention token rather than distinct handles. This is the default entry in
+    `ToxicityConfig.preprocessors` -- pass your own `preprocessors` list to
+    replace it (e.g. to keep the privacy layer's `@u_<hash>` tokens intact).
+    """
+    body = row.get("body")
+    if not body:
+        return row
+    row = dict(row)
+    row["body"] = _MENTION_RE.sub("@user", body)
+    return row
+
+
 # ----------------------- Config -----------------------
 @dataclass
-class DetoxifyConfig(EnricherRunConfig):
-    """Configuration for DetoxifyToxicityEnricher.
+class ToxicityConfig(EnricherRunConfig):
+    """Configuration for ToxicityEnricher.
 
     Attributes:
         model_name: Detoxify variant. One of: ``original``, ``unbiased``,
@@ -43,6 +62,9 @@ class DetoxifyConfig(EnricherRunConfig):
     device: Optional[str] = None
     hf_model_id: Optional[str] = None
     hf_tokenizer_id: Optional[str] = None
+    preprocessors: List[RowPreprocessor] = field(
+        default_factory=lambda: [default_mention_preprocessor]
+    )
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -65,12 +87,12 @@ class DetoxifyConfig(EnricherRunConfig):
 
 
 @register(
-    "detoxify_toxicity",
+    "toxicity",
     target="posts",
     description="Multilingual toxicity scoring (Detoxify) via Transformers",
     requires=["torch", "transformers"],  # soft dep check
 )
-class DetoxifyToxicityEnricher(BaseEnricher):
+class ToxicityEnricher(BaseEnricher):
     """Scores post text for toxicity using a Detoxify transformer checkpoint.
 
     - ``model_id`` format: ``"toxicity_<model_name>"``
@@ -90,7 +112,7 @@ class DetoxifyToxicityEnricher(BaseEnricher):
 
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
         super().__init__(db)
-        self.cfg = self._coerce_config(config, DetoxifyConfig)
+        self.cfg = self._coerce_config(config, ToxicityConfig)
 
         self.device = (
             self.cfg.device
@@ -230,12 +252,6 @@ class DetoxifyToxicityEnricher(BaseEnricher):
             conn.close()
 
     # --------------- inference ----------------
-    _MENTION_RE = re.compile(r"@\w+", flags=re.UNICODE)
-
-    def _clean(self, text: str) -> str:
-        # Lightweight cleanup; mirror your previous logic
-        return self._MENTION_RE.sub("@user", text or "")
-
     def _predict_batch(self, texts: List[str]) -> List[Dict[str, float]]:
         if self.model is None or self.tokenizer is None:
             self.load_model()
@@ -288,7 +304,7 @@ class DetoxifyToxicityEnricher(BaseEnricher):
             body = (r.get("body") or "").strip()
             if body:
                 post_ids.append(pid)
-                texts.append(self._clean(body))
+                texts.append(body)
                 created_ats.append(r.get("created_at"))
 
         if not texts:

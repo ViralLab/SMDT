@@ -1,15 +1,48 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re, json
 from pathlib import Path
 
 from typing import Any, Dict, List, Optional
-from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig, RowPreprocessor
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
 from smdt.store.standard_db import StandardDB
+
+
+_MENTION_RE = re.compile(r"@\w+")
+_EMOJI_RE = re.compile(
+    "["  # note: python handles these unicode ranges
+    "\U0001f600-\U0001f64f"  # Emoticons
+    "\U0001f300-\U0001f5ff"  # Symbols & pictographs
+    "\U0001f680-\U0001f6ff"  # Transport & map symbols
+    "\U0001f1e0-\U0001f1ff"  # Flags
+    "\u2702-\u27b0"
+    "\u24c2-\U0001f251"
+    "]+",
+    flags=re.UNICODE,
+)
+_EMOJI_TAG_RE = re.compile(r"<emoji:\s*\w+>")
+
+
+def default_text_cleanup_preprocessor(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip mentions/emoji/emoji-tags from `body` before language detection,
+    so they don't skew script/language signals.
+
+    This is the default entry in `LanguageDetectionConfig.preprocessors` --
+    pass your own `preprocessors` list to replace it.
+    """
+    body = row.get("body")
+    if not body:
+        return row
+    row = dict(row)
+    text = _MENTION_RE.sub("", body)
+    text = _EMOJI_RE.sub("", text)
+    text = _EMOJI_TAG_RE.sub("", text)
+    row["body"] = text.strip()
+    return row
 
 
 @dataclass
@@ -18,22 +51,25 @@ class LanguageDetectionConfig(EnricherRunConfig):
 
     Attributes:
         model_id_postfix: Optional suffix appended to form the
-            ``post_enrichments.model_id`` key (``"langdetect_<postfix>"``).
-            Leave unset to just use ``"langdetect"``.
+            ``post_enrichments.model_id`` key (``"language_detection_<postfix>"``).
+            Leave unset to just use ``"language_detection"``.
     """
     model_id_postfix: Optional[str] = None
+    preprocessors: List[RowPreprocessor] = field(
+        default_factory=lambda: [default_text_cleanup_preprocessor]
+    )
 
 
 @register(
-    "langdetect",  # registry name
+    "language_detection",  # registry name
     target="posts",  # we enrich posts
     description="Language detection via langdetect.detect_langs",
-    requires=["langdetect"],  # soft dependency check
+    requires=["langdetect"],  # soft dependency check (this is the pip package name)
 )
 class LanguageDetectionEnricher(BaseEnricher):
     """Detects the language of post bodies using ``langdetect``.
 
-    - ``model_id`` format: ``"langdetect"`` or ``"langdetect_<model_id_postfix>"``
+    - ``model_id`` format: ``"language_detection"`` or ``"language_detection_<model_id_postfix>"``
     - JSONB payload: ``{"langs": [{"lang": "en", "prob": 0.999}, ...], "len": 123}``
     """
 
@@ -41,21 +77,6 @@ class LanguageDetectionEnricher(BaseEnricher):
         super().__init__(db)
         self.cfg = self._coerce_config(config, LanguageDetectionConfig)
         self.model_id = self._make_model_id(self.cfg.model_id_postfix)
-
-        # regexes ported from your previous implementation
-        self._emoji_re = re.compile(
-            "["  # note: python handles these unicode ranges
-            "\U0001f600-\U0001f64f"  # Emoticons
-            "\U0001f300-\U0001f5ff"  # Symbols & pictographs
-            "\U0001f680-\U0001f6ff"  # Transport & map symbols
-            "\U0001f1e0-\U0001f1ff"  # Flags
-            "\u2702-\u27b0"
-            "\u24c2-\U0001f251"
-            "]+",
-            flags=re.UNICODE,
-        )
-        self._mention_re = re.compile(r"@\w+")
-        self._emoji_tag_re = re.compile(r"<emoji:\s*\w+>")
         self.applied_datetime = datetime.now(timezone.utc)
 
         self._init_cache()
@@ -126,9 +147,8 @@ class LanguageDetectionEnricher(BaseEnricher):
         out: List[Dict[str, Any]] = []
         for r in rows:
             post_id = r["post_id"]
-            raw_text = r.get("body") or ""
+            text = r.get("body") or ""
             created_at = r.get("created_at")
-            text = self._preprocess(raw_text)
 
             # skip extremely short strings
             if len(text) < 4:
@@ -154,13 +174,6 @@ class LanguageDetectionEnricher(BaseEnricher):
                 }
             )
         return out
-
-    def _preprocess(self, text: str) -> str:
-        # match your previous cleaner
-        text = self._mention_re.sub("", text)
-        text = self._emoji_re.sub("", text)
-        text = self._emoji_tag_re.sub("", text)
-        return text.strip()
 
     def save_results(self, results: List[Dict[str, Any]]) -> None:
         if not results:

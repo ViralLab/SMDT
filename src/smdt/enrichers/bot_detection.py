@@ -19,8 +19,8 @@ from smdt.store.standard_db import StandardDB
 
 
 @dataclass
-class BotometerConfig(EnricherRunConfig):
-    """Configuration for BotometerEnricher.
+class BotDetectionConfig(EnricherRunConfig):
+    """Configuration for BotDetectionEnricher.
 
     Attributes:
         model_path: Path to the pickled model file. Defaults to
@@ -35,15 +35,15 @@ class BotometerConfig(EnricherRunConfig):
     description="Bot detection score for accounts",
     requires=["numpy", "dateutil"],
 )
-class BotometerEnricher(BaseEnricher):
+class BotDetectionEnricher(BaseEnricher):
     """
-    Scores accounts with a pre-trained botometer sklearn model and writes to
-    account_enrichments.  JSONB payload: {"bot_score": float}
+    Scores accounts with a pre-trained botometer-style sklearn model and writes
+    to account_enrichments.  JSONB payload: {"bot_score": float}
     """
 
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
         super().__init__(db)
-        self.cfg = self._coerce_config(config, BotometerConfig)
+        self.cfg = self._coerce_config(config, BotDetectionConfig)
         self.model_id = self._make_model_id()
         self.applied_datetime = datetime.now(timezone.utc)
         self.model = None

@@ -7,7 +7,11 @@ import asyncio
 import json
 import time
 
-from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
+from smdt.enrichers.base import (
+    BaseEnricher,
+    EnricherRunConfig,
+    warn_if_unprotected_commercial_api,
+)
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
@@ -25,15 +29,15 @@ _VALID_PROVIDER_KINDS = {"openai", "anthropic", "hf-text", "ollama", "gemini"}
 
 
 @dataclass
-class TextGenConfig(EnricherRunConfig):
-    """Configuration for TextGenEnricher.
+class TextGenerationConfig(EnricherRunConfig):
+    """Configuration for TextGenerationEnricher.
 
     Attributes:
         chat_model_id: Model name as served by the vLLM/OpenAI endpoint.
         base_url: OpenAI-compatible endpoint URL.
         model_id_postfix: Optional suffix appended to form the
-            ``post_enrichments.model_id`` key (``"textgen_<postfix>"``).
-            Leave unset to just use ``"textgen"``.
+            ``post_enrichments.model_id`` key (``"text_generation_<postfix>"``).
+            Leave unset to just use ``"text_generation"``.
         provider_kind: Adapter type — one of ``"openai"``, ``"anthropic"``,
             ``"hf-text"``, ``"ollama"``, ``"gemini"``.
         provider_model: Model name override for the provider (defaults to ``chat_model_id``).
@@ -102,26 +106,78 @@ class TextGenConfig(EnricherRunConfig):
                 f"must be one of {sorted(_VALID_PROVIDER_KINDS)}."
             )
 
+        warn_if_unprotected_commercial_api(self, self.base_url)
+
+    # ---- Provider factories -------------------------------------------
+    # base_url and provider_kind always travel together per provider; these
+    # pre-fill that pairing so the common case doesn't have to repeat it.
+    @classmethod
+    def for_openai(cls, *, model: str, api_key: str, **kwargs: Any) -> "TextGenerationConfig":
+        """Build a config for OpenAI's chat completions API."""
+        return cls(
+            chat_model_id=model,
+            provider_kind="openai",
+            base_url="https://api.openai.com/v1",
+            api_key=api_key,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_anthropic(cls, *, model: str, api_key: str, **kwargs: Any) -> "TextGenerationConfig":
+        """Build a config for Anthropic's Messages API."""
+        return cls(
+            chat_model_id=model,
+            provider_kind="anthropic",
+            base_url="https://api.anthropic.com/v1/messages",
+            api_key=api_key,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_gemini(cls, *, model: str, api_key: str, **kwargs: Any) -> "TextGenerationConfig":
+        """Build a config for Gemini's OpenAI-compatible API."""
+        return cls(
+            chat_model_id=model,
+            provider_kind="gemini",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=api_key,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_ollama(
+        cls, *, model: str, base_url: str = "http://localhost:11434/v1", **kwargs: Any
+    ) -> "TextGenerationConfig":
+        """Build a config for a local Ollama server."""
+        kwargs.setdefault("api_key", "ollama")  # placeholder; Ollama ignores it
+        return cls(
+            chat_model_id=model,
+            provider_kind="ollama",
+            base_url=base_url,
+            **kwargs,
+        )
+
 
 @register(
-    "textgen",
+    "text_generation",
     target="posts",
     description="Text generation via provider adapters (OpenAI-compatible, Anthropic, HF, Ollama)",
     requires=[],  # no hard dependency on 'openai' here
 )
-class TextGenEnricher(BaseEnricher):
+class TextGenerationEnricher(BaseEnricher):
     """Enriches post bodies with LLM-generated text via provider adapters.
 
     Supports OpenAI-compatible endpoints, Anthropic, Hugging Face text-generation,
     Ollama, and Gemini. Runs async batched requests with client-side rate limiting.
 
-    - ``model_id`` format: ``"textgen"`` or ``"textgen_<model_id_postfix>"``
-    - JSONB payload: ``{"response": str, "model": str, "provider": str}``
+    - ``model_id`` format: ``"text_generation"`` or ``"text_generation_<model_id_postfix>"``
+    - JSONB payload: ``{"text": str, "vendor": str, "chat_model_id": str,
+      "temperature": float, "max_tokens": Optional[int], "prompt": dict}``
     """
 
     def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
         super().__init__(db)
-        self.cfg = self._coerce_config(config, TextGenConfig)
+        self.cfg = self._coerce_config(config, TextGenerationConfig)
 
         self._gen_params = GenParams(
             temperature=self.cfg.temperature,
@@ -250,7 +306,7 @@ class TextGenEnricher(BaseEnricher):
             text = await self._adapter.complete(messages, self._gen_params)
             return {"text": text, "prompt": prompt_meta}
         except Exception as e:
-            print(f"[WARN] textgen request failed: {e}")
+            print(f"[WARN] text generation request failed: {e}")
             return None
 
     # ---- async batch processing ----

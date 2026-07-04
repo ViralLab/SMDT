@@ -7,6 +7,7 @@ pytest.importorskip("torch")
 from smdt.enrichers.sentence_classifier import (
     SentenceClassifierConfig,
     SentenceClassifierEnricher,
+    default_mention_preprocessor,
 )
 
 
@@ -65,3 +66,23 @@ def test_save_results_uses_body_key_not_content() -> None:
     # Should not raise KeyError("content").
     e.save_results([fake_result])
     db.insert_with_fallbacks.assert_called_once()
+
+
+def test_default_mention_preprocessor_collapses_mentions_to_user() -> None:
+    """Mention normalization used to be a hardcoded method (_clean) called
+    from process_batch; it's now a standalone preprocessor, detached from
+    the model itself, wired in as SentenceClassifierConfig's default
+    preprocessors entry."""
+    out = default_mention_preprocessor({"body": "hey @JohnDoe how are you"})
+    assert out["body"] == "hey @user how are you"
+
+
+def test_default_mention_preprocessor_is_wired_into_config_by_default() -> None:
+    cfg = SentenceClassifierConfig(hf_model_id="some/model")
+    assert cfg.preprocessors == [default_mention_preprocessor]
+
+
+def test_default_mention_preprocessor_can_be_overridden() -> None:
+    my_fn = lambda row: row
+    cfg = SentenceClassifierConfig(hf_model_id="some/model", preprocessors=[my_fn])
+    assert cfg.preprocessors == [my_fn]

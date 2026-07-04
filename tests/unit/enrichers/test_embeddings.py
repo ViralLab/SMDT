@@ -67,3 +67,58 @@ def test_total_count_builds_query_without_crashing() -> None:
     )
     e = EmbeddingEnricher(db, config=cfg)
     assert e.total_count() == 3
+
+
+def test_warns_when_commercial_base_url_has_no_privacy_layer(caplog) -> None:
+    """base_url pointing at a known commercial API host with no
+    privacy_fields configured should log a warning, not raise."""
+    with caplog.at_level("WARNING"):
+        EmbeddingConfig(
+            embedding_model_id="text-embedding-3-small",
+            base_url="https://api.openai.com/v1",
+        )
+    assert any(
+        "commercial API host" in r.message and "https://api.openai.com/v1" in r.message
+        for r in caplog.records
+    )
+
+
+def test_no_warning_when_privacy_fields_configured(caplog) -> None:
+    with caplog.at_level("WARNING"):
+        EmbeddingConfig(
+            embedding_model_id="text-embedding-3-small",
+            base_url="https://api.openai.com/v1",
+            privacy_fields=["body"],
+            pepper=b"pepper",
+        )
+    assert not any("commercial API host" in r.message for r in caplog.records)
+
+
+def test_no_warning_for_self_hosted_base_url(caplog) -> None:
+    with caplog.at_level("WARNING"):
+        EmbeddingConfig(
+            embedding_model_id="intfloat/e5-large", base_url="http://localhost:8010/v1"
+        )
+    assert not any("commercial API host" in r.message for r in caplog.records)
+
+
+def test_for_openai_prefills_base_url() -> None:
+    cfg = EmbeddingConfig.for_openai(model="text-embedding-3-small", api_key="sk-test")
+    assert cfg.embedding_model_id == "text-embedding-3-small"
+    assert cfg.base_url == "https://api.openai.com/v1"
+    assert cfg.api_key == "sk-test"
+
+
+def test_for_openai_forwards_extra_kwargs() -> None:
+    cfg = EmbeddingConfig.for_openai(
+        model="text-embedding-3-small", api_key="sk-test", batch_size=256
+    )
+    assert cfg.batch_size == 256
+
+
+def test_for_openai_still_goes_through_full_validation() -> None:
+    """Factory is sugar over __init__, not a bypass -- validation still runs."""
+    with pytest.raises(ValueError, match="batch_size"):
+        EmbeddingConfig.for_openai(
+            model="text-embedding-3-small", api_key="sk-test", batch_size=0
+        )

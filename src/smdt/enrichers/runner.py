@@ -18,20 +18,20 @@ def run_enricher(
     """Construct and run an enricher.
 
     Args:
-        enricher: Either a registered enricher name (e.g. ``"textgen"``) or an
-            enricher class directly (e.g. ``TextGenEnricher`` -- works even if
-            it isn't registered).
+        enricher: Either a registered enricher name (e.g. ``"text_generation"``) or
+            an enricher class directly (e.g. ``TextGenerationEnricher`` -- works
+            even if it isn't registered).
         db: Database connection or handler.
         config: The enricher's own config dataclass instance (recommended --
             gives autocomplete/type checking), or a plain dict of its fields.
         db_batch_size: Rows fetched from the DB per iteration.
 
     Example:
-        >>> from smdt.enrichers.llm_textgen import TextGenEnricher, TextGenConfig
+        >>> from smdt.enrichers.text_generation import TextGenerationEnricher, TextGenerationConfig
         >>> run_enricher(
-        ...     TextGenEnricher,  # or "textgen"
+        ...     TextGenerationEnricher,  # or "text_generation"
         ...     db=db,
-        ...     config=TextGenConfig(chat_model_id="gpt-4o-mini", base_url="https://api.openai.com/v1"),
+        ...     config=TextGenerationConfig.for_openai(model="gpt-4o-mini", api_key="..."),
         ... )
     """
     cls = get_enricher(enricher)["cls"] if isinstance(enricher, str) else enricher

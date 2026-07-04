@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from smdt.enrichers.language_detection import (
     LanguageDetectionConfig,
     LanguageDetectionEnricher,
+    default_text_cleanup_preprocessor,
 )
 
 
@@ -15,7 +16,7 @@ def test_instantiation_does_not_crash() -> None:
     """
     db = MagicMock()
     e = LanguageDetectionEnricher(db, config=LanguageDetectionConfig())
-    assert e.model_id == "langdetect"
+    assert e.model_id == "language_detection"
 
 
 def test_config_only_missing_exists_and_defaults_true() -> None:
@@ -31,16 +32,32 @@ def test_model_id_with_postfix() -> None:
     e = LanguageDetectionEnricher(
         db, config=LanguageDetectionConfig(model_id_postfix="v2")
     )
-    assert e.model_id == "langdetect_v2"
+    assert e.model_id == "language_detection_v2"
 
 
-def test_preprocess_strips_mentions_and_emoji() -> None:
-    db = MagicMock()
-    e = LanguageDetectionEnricher(db, config=LanguageDetectionConfig())
-    cleaned = e._preprocess("hey @someone 😀 great post")
+def test_default_preprocessor_strips_mentions_and_emoji() -> None:
+    """Cleanup used to be a hardcoded method called from process_batch;
+    it's now a standalone preprocessor, detached from the model itself,
+    wired in as LanguageDetectionConfig's default `preprocessors` entry."""
+    cleaned = default_text_cleanup_preprocessor({"body": "hey @someone 😀 great post"})[
+        "body"
+    ]
     assert "@someone" not in cleaned
     assert "😀" not in cleaned
     assert "great post" in cleaned
+
+
+def test_default_preprocessor_is_wired_into_config_by_default() -> None:
+    cfg = LanguageDetectionConfig()
+    assert cfg.preprocessors == [default_text_cleanup_preprocessor]
+
+
+def test_default_preprocessor_can_be_overridden() -> None:
+    """Passing a custom preprocessors list replaces the default entirely --
+    no hidden merging, consistent with EnricherRunConfig.preprocessors."""
+    my_fn = lambda row: row
+    cfg = LanguageDetectionConfig(preprocessors=[my_fn])
+    assert cfg.preprocessors == [my_fn]
 
 
 def test_total_count_builds_query_without_crashing() -> None:

@@ -11,7 +11,7 @@ model_id in account_enrichments:   "bot_detection"
 
 from smdt.store.standard_db import StandardDB
 from smdt.enrichers.runner import run_enricher
-from smdt.enrichers.bot_detection import BotometerEnricher, BotometerConfig
+from smdt.enrichers.bot_detection import BotDetectionEnricher, BotDetectionConfig
 
 # ---------------------------------------------------------------------------
 # 1. Connect to your database
@@ -23,7 +23,7 @@ db = StandardDB(db_name=DB_NAME)
 # 2. Configure the enricher
 #    Set do_save_to_db=False + output_dir if you want JSONL output instead.
 # ---------------------------------------------------------------------------
-config = BotometerConfig(
+config = BotDetectionConfig(
     # Skip accounts that already have a botometer_v1 enrichment row
     only_missing=True,
 
@@ -47,5 +47,5 @@ config = BotometerConfig(
 DB_BATCH_SIZE = 5  # accounts fetched from DB per iteration
 
 print(f"Running bot detection on '{DB_NAME}'...")
-run_enricher(BotometerEnricher, db=db, config=config, db_batch_size=DB_BATCH_SIZE)
+run_enricher(BotDetectionEnricher, db=db, config=config, db_batch_size=DB_BATCH_SIZE)
 print("Done.")

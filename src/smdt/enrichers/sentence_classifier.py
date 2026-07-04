@@ -9,7 +9,7 @@ import math
 from tqdm.auto import trange
 
 
-from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig, RowPreprocessor
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
@@ -22,6 +22,26 @@ except ImportError as e:
     raise ImportError(
         "The 'torch' package is required. Install with 'pip install torch'."
     ) from e
+
+
+_MENTION_RE = re.compile(r"@\w+", flags=re.UNICODE)
+
+
+def default_mention_preprocessor(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Collapse any @mention-shaped token in `body` to the generic `@user`.
+
+    Many sentence-classification checkpoints (BERTweet-style pretraining)
+    expect a single generic mention token rather than distinct handles. This
+    is the default entry in `SentenceClassifierConfig.preprocessors` -- pass
+    your own `preprocessors` list to replace it (e.g. to keep the privacy
+    layer's `@u_<hash>` tokens intact).
+    """
+    body = row.get("body")
+    if not body:
+        return row
+    row = dict(row)
+    row["body"] = _MENTION_RE.sub("@user", body)
+    return row
 
 
 # ----------------------- Config -----------------------
@@ -56,6 +76,9 @@ class SentenceClassifierConfig(EnricherRunConfig):
     is_multilabel: bool = False
     model_kwargs: Dict[str, Any] = field(default_factory=dict)
     tokenizer_kwargs: Dict[str, Any] = field(default_factory=dict)
+    preprocessors: List[RowPreprocessor] = field(
+        default_factory=lambda: [default_mention_preprocessor]
+    )
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -209,11 +232,6 @@ class SentenceClassifierEnricher(BaseEnricher):
             conn.close()
 
     # --------------- inference ----------------
-    _MENTION_RE = re.compile(r"@\w+", flags=re.UNICODE)
-
-    def _clean(self, text: str) -> str:
-        return self._MENTION_RE.sub("@user", text or "")
-
     def _predict_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
         if self.model is None or self.tokenizer is None:
             self.load_model()
@@ -266,7 +284,7 @@ class SentenceClassifierEnricher(BaseEnricher):
             return []
 
         post_ids = [r["post_id"] for r in rows if (r.get("body") or "").strip()]
-        texts = [self._clean(r["body"]) for r in rows if (r.get("body") or "").strip()]
+        texts = [r["body"] for r in rows if (r.get("body") or "").strip()]
         post_created_ats = [
             r.get("created_at") or self.applied_datetime
             for r in rows

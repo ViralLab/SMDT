@@ -6,7 +6,11 @@ from typing import Any, Dict, List, Optional
 import json
 import os
 
-from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
+from smdt.enrichers.base import (
+    BaseEnricher,
+    EnricherRunConfig,
+    warn_if_unprotected_commercial_api,
+)
 from smdt.enrichers.registry import register
 
 from smdt.store.models import PostEnrichments
@@ -45,6 +49,19 @@ class EmbeddingConfig(EnricherRunConfig):
             raise ValueError("base_url is required.")
         if not isinstance(self.batch_size, int) or self.batch_size <= 0:
             raise ValueError("batch_size must be a positive integer.")
+
+        warn_if_unprotected_commercial_api(self, self.base_url)
+
+    # ---- Provider factories -------------------------------------------
+    @classmethod
+    def for_openai(cls, *, model: str, api_key: str, **kwargs: Any) -> "EmbeddingConfig":
+        """Build a config for OpenAI's embeddings API."""
+        return cls(
+            embedding_model_id=model,
+            base_url="https://api.openai.com/v1",
+            api_key=api_key,
+            **kwargs,
+        )
 
 
 @register(

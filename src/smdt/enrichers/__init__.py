@@ -27,7 +27,7 @@ except ImportError:
     pass
 
 try:
-    from . import llm_textgen
+    from . import text_generation
 except ImportError:
     pass
 

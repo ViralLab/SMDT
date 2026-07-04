@@ -2,13 +2,60 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Dict, Iterable, List, Optional, Type, TypeVar
+from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional, Tuple, Type, TypeVar
 from pathlib import Path
+from urllib.parse import urlparse
+import logging
 import tqdm
 import re
 from uuid import uuid4
 
+from smdt.pseudonymizer.pseudonyms import Algorithm
+from smdt.pseudonymizer.pii_policy import PiiPolicy
+
+log = logging.getLogger(__name__)
+
 ConfigT = TypeVar("ConfigT")
+
+RowPreprocessor = Callable[[Dict[str, Any]], Dict[str, Any]]
+
+# Known hosted third-party LLM/embedding API hosts. Best-effort: only warns
+# about this small list, not every conceivable commercial endpoint, and never
+# warns for self-hosted backends (Ollama, local vLLM, HF text-generation-
+# inference) since those don't leave the caller's own infrastructure.
+_COMMERCIAL_API_HOSTS = {
+    "api.openai.com",
+    "api.anthropic.com",
+    "generativelanguage.googleapis.com",
+    "api-inference.huggingface.co",
+}
+
+
+def warn_if_unprotected_commercial_api(cfg: "EnricherRunConfig", base_url: str) -> None:
+    """Warn when a server-backed enricher sends unredacted content to a
+    known commercial API host with no privacy layer configured.
+
+    Called from a server-backed config's own `__post_init__` (e.g.
+    `TextGenerationConfig`, `EmbeddingConfig`), since `EnricherRunConfig` itself has
+    no `base_url` field -- only enrichers that actually make network calls
+    know what to check.
+
+    Args:
+        cfg: The config instance being validated (checked for `privacy_fields`).
+        base_url: The endpoint this enricher will send row content to.
+    """
+    if cfg.privacy_fields:
+        return
+    host = (urlparse(base_url).hostname or "").lower()
+    if host in _COMMERCIAL_API_HOSTS:
+        log.warning(
+            "base_url '%s' looks like a commercial API host and no "
+            "privacy_fields are configured on this enricher -- raw row "
+            "content (e.g. post body) will be sent to it unredacted. Set "
+            "privacy_fields (and pii_policy) to enable the built-in "
+            "redaction/hashing layer if that isn't intended.",
+            base_url,
+        )
 
 
 @dataclass(kw_only=True)
@@ -27,6 +74,37 @@ class EnricherRunConfig:
         do_save_to_db: Write results to the database; ``False`` writes JSONL
             files to ``output_dir`` instead.
         output_dir: Required when ``do_save_to_db=False``.
+        privacy_fields: Row fields to redact/hash via `smdt.pseudonymizer`
+            before anything else touches the row. This is the built-in
+            privacy layer: disabled by default (empty list); enable it by
+            listing the fields to protect (e.g. ``["body"]``, or
+            ``["account_name", "bio"]`` for an account-level enricher). Each
+            listed field is redacted with the dependency-free `Redactor`
+            (mentions/emails/URLs), or with the Presidio-based `PiiEngine`
+            for fields `pii_policy` actually configures, exactly like
+            `Pseudonymizer._transform_row`'s redact branch.
+        pii_policy: Optional `PiiPolicy` enabling Presidio-based PII detection
+            (phone numbers, emails, names, ...) for `privacy_fields`. Requires
+            the `pii` extra. If `None`, `privacy_fields` still get the
+            baseline `Redactor` treatment. Ignored if `privacy_fields` is
+            empty.
+        pepper: Secret pepper for the `Hasher` used to redact MENTION-type
+            entities and build the fallback `Redactor`. Required whenever
+            `privacy_fields` is non-empty.
+        algorithm: Hashing algorithm for the same `Hasher`.
+        nlp_configuration: Presidio `NlpEngineProvider` config, forwarded to
+            `PiiEngine` if `pii_policy` is set. See `PiiEngine` for the
+            expected shape.
+        custom_pii_recognizers: Extra `PatternRecognizer`s scoped per
+            (table, column), forwarded to `PiiEngine` if `pii_policy` is set.
+        preprocessors: Ordered list of row-transforming functions applied to
+            every fetched row, after the privacy layer above and before
+            ``process_batch`` sees it. Each takes the row dict and returns a
+            (possibly modified) row dict; they run in list order, each seeing
+            the previous one's output. Not privacy-specific -- this is a
+            general-purpose hook for the caller's own transforms (cleaning up
+            artifacts the privacy layer left behind, truncation, whatever).
+            Defaults to an empty list: no behavior change unless configured.
     """
 
     only_missing: bool = True
@@ -34,12 +112,24 @@ class EnricherRunConfig:
     cache_dir: Optional[str] = None
     do_save_to_db: bool = True
     output_dir: Optional[str] = None
+    privacy_fields: List[str] = field(default_factory=list)
+    pii_policy: Optional[PiiPolicy] = None
+    pepper: Optional[bytes] = None
+    algorithm: Algorithm = Algorithm.SHA256
+    nlp_configuration: Optional[Dict[str, Any]] = None
+    custom_pii_recognizers: Optional[Dict[Tuple[str, str], List[Any]]] = None
+    preprocessors: List[RowPreprocessor] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.do_save_to_db:
             if not self.output_dir:
                 raise ValueError("output_dir is required when do_save_to_db=False.")
             Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+        if self.privacy_fields and self.pepper is None:
+            raise ValueError(
+                "pepper is required when privacy_fields is set (needed to "
+                "build the Hasher used for the privacy layer's redaction)."
+            )
 
 
 class BaseEnricher(ABC):
@@ -114,6 +204,92 @@ class BaseEnricher(ABC):
             `ENRICHER_NAME`, or `f"{ENRICHER_NAME}_{suffix}"` if given.
         """
         return f"{self.ENRICHER_NAME}_{suffix}" if suffix else self.ENRICHER_NAME
+
+    def _apply_privacy(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Redact/hash `self.cfg.privacy_fields`, before preprocessors run.
+
+        Disabled by default (`privacy_fields` empty -- no `smdt.pseudonymizer`
+        objects are even constructed). When enabled, mirrors
+        `Pseudonymizer._transform_row`'s redact branch: a field configured in
+        `pii_policy` goes through the Presidio-based `PiiEngine`; every other
+        listed field falls back to the dependency-free `Redactor`. The
+        `Redactor`/`Hasher`/`PiiEngine` are built once and cached on `self`.
+
+        Args:
+            rows: Rows as returned by `fetch_batch`.
+
+        Returns:
+            Rows with `privacy_fields` redacted/hashed in place, or the same
+            rows unchanged if `privacy_fields` is empty.
+        """
+        fields = getattr(self.cfg, "privacy_fields", None)
+        if not fields:
+            return rows
+
+        if not hasattr(self, "_privacy_redactor"):
+            from smdt.pseudonymizer.pseudonyms import Hasher
+            from smdt.pseudonymizer.redact import Redactor
+
+            hasher = Hasher(
+                algo=self.cfg.algorithm,
+                pepper=self.cfg.pepper,
+                normalizer=lambda s: s.strip().lower(),
+            )
+            self._privacy_redactor = Redactor(
+                handle_mapper=lambda h: hasher.make(h) or "",
+                map_host=lambda host: host,
+            )
+            self._privacy_engine = None
+            if self.cfg.pii_policy is not None:
+                from smdt.pseudonymizer.pii_engine import PiiEngine
+
+                self._privacy_engine = PiiEngine(
+                    hasher=hasher,
+                    nlp_configuration=self.cfg.nlp_configuration,
+                    custom_recognizers=self.cfg.custom_pii_recognizers,
+                )
+
+        table = self.TARGET
+        policy = self.cfg.pii_policy
+        for i, row in enumerate(rows):
+            row = dict(row)
+            platform = row.get("platform")
+            for col in fields:
+                val = row.get(col)
+                if val is None:
+                    continue
+                if self._privacy_engine is not None and policy.is_configured(table, col):
+                    row[col] = self._privacy_engine.redact(
+                        val, table, col, policy, platform=platform
+                    )
+                else:
+                    row[col] = self._privacy_redactor.redact(val)
+            rows[i] = row
+        return rows
+
+    def _apply_preprocessors(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Run `self.cfg.preprocessors` over every row, in order.
+
+        Called centrally by `run()` right after `fetch_batch()`, so no
+        individual enricher needs to remember to wire this in itself. A row
+        is threaded through each preprocessor in list order before
+        `process_batch` ever sees it.
+
+        Args:
+            rows: Rows as returned by `fetch_batch`.
+
+        Returns:
+            Rows after every configured preprocessor has run, in place if
+            `preprocessors` is empty (no copy, no behavior change).
+        """
+        preprocessors = getattr(self.cfg, "preprocessors", None)
+        if not preprocessors:
+            return rows
+        for i, row in enumerate(rows):
+            for step in preprocessors:
+                row = step(row)
+            rows[i] = row
+        return rows
 
     # ---- Lifecycle ---------------------------------------------------------
     def setup(self) -> None:
@@ -311,6 +487,8 @@ class BaseEnricher(ABC):
                     batch = self.fetch_batch(offset, db_batch_size)
                     if not batch:
                         break
+                    batch = self._apply_privacy(batch)
+                    batch = self._apply_preprocessors(batch)
                     results = self.process_batch(batch)
                     if results:
                         self.save_results(results)
@@ -324,6 +502,8 @@ class BaseEnricher(ABC):
                     batch = self.fetch_batch(offset, db_batch_size)
                     if not batch:
                         break
+                    batch = self._apply_privacy(batch)
+                    batch = self._apply_preprocessors(batch)
                     results = self.process_batch(batch)
                     if results:
                         self.save_results(results)

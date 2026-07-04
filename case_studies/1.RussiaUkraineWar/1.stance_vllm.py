@@ -1,6 +1,6 @@
 from smdt.store.standard_db import StandardDB
 from smdt.enrichers.runner import run_enricher
-from smdt.enrichers.post.nlp.server.textgen.textgen import TextGenEnricher
+from smdt.enrichers.text_generation import TextGenerationEnricher
 
 
 system_prompt = """
@@ -98,5 +98,5 @@ for db_name in ["truthsocial_ukraine_russia", "twitter_ukraine_russia"]:
     }
 
     print("Starting Local Enrichment...")
-    run_enricher("textgen", db=db, **config)
+    run_enricher("text_generation", db=db, **config)
     print("Done.")
