@@ -38,7 +38,7 @@ cfg = PseudonymizeConfig(
 
 ### 2. Policy
 
-The `PseudonymPolicy` dictates how each column in each table should be handled. You can use the `DEFAULT_POLICY` which covers standard SMDT schema fields (like `users.id`, `tweets.author_id`, etc.), or define your own.
+The `PseudonymPolicy` dictates how each column in each table should be handled. You can use the `DEFAULT_POLICY` which covers standard SMDT schema fields (like `accounts.account_id`, `posts.body`, etc.), or define your own.
 
 ```python
 from smdt.pseudonymizer import PseudonymPolicy, DEFAULT_POLICY
@@ -49,17 +49,17 @@ policy = DEFAULT_POLICY
 # Or create a custom one
 custom_policy = PseudonymPolicy(
     hash_cols={
-        "users": {"id", "username"},
-        "tweets": {"author_id", "in_reply_to_user_id"}
+        "accounts": {"account_id", "username"},
+        "posts": {"account_id", "conversation_id"}
     },
     redact_cols={
-        "tweets": {"text"}
+        "posts": {"body"}
     },
     drop_cols={
-        "users": {"email", "phone"}
+        "accounts": {"location"}
     },
     blank_cols={
-        "users": {"location"} # Keeps column but sets values to NULL
+        "accounts": {"profile_image_url"} # Keeps column but sets values to NULL
     }
 )
 ```
