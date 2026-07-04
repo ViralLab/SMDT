@@ -582,12 +582,10 @@ class StandardDB:
         writer = csv.writer(buf, lineterminator="\n", quoting=csv.QUOTE_MINIMAL)
         for e in items:
             vals = list(e.insert_values(include_id=include_id))
-            row = []
-            for v in vals:
-                s = to_copy_text(v)
-                row.append(
-                    csv_null if s is None else s
-                )  # tell COPY what NULL looks like
+            # Check `v is None` before to_copy_text: to_copy_text(None) already
+            # returns the literal string "\\N", so checking the *result* for
+            # None here would never fire, silently ignoring a custom csv_null.
+            row = [csv_null if v is None else to_copy_text(v) for v in vals]
             writer.writerow(row)
         buf.seek(0)
 
@@ -599,14 +597,15 @@ class StandardDB:
                     tmp = f"tmp_{table_name}_{int(time.time())}_{id(items) % 10000}"
                     cur.execute(
                         sql.SQL(
-                            "CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)"
+                            "CREATE TEMP TABLE {} (LIKE {} INCLUDING ALL)"
                         ).format(_ident(tmp), _ident(table_name))
                     )
 
                     copy_sql = sql.SQL(
                         "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL {})"
                     ).format(_ident(tmp), col_list, sql.Literal(csv_null))
-                    cur.copy(copy_sql, buf)
+                    with cur.copy(copy_sql) as cp:
+                        cp.write(buf.read())
 
                     insert_sql = (
                         sql.SQL("INSERT INTO {} ({}) SELECT {} FROM {}").format(
@@ -621,7 +620,8 @@ class StandardDB:
                     copy_sql = sql.SQL(
                         "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL {})"
                     ).format(_ident(table_name), col_list, sql.Literal(csv_null))
-                    cur.copy(copy_sql, buf)
+                    with cur.copy(copy_sql) as cp:
+                        cp.write(buf.read())
 
             conn.commit()
             log.info(

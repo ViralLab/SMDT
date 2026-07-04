@@ -238,16 +238,17 @@ class GabStandardizer(Standardizer):
                 txt = txt.replace("\t", " ")
                 txt.split(" ")
 
-                entity_dict = {
-                    "post_id": post_id,
-                    "body": txt[-1] if txt[-1].startswith("https://") else None,
-                    "entity_type": EntityType.LINK,
-                    "created_at": timestamp,
-                    "account_id": account_id,
-                    "retrieved_at": retrieved_at,
-                }
+                if txt[-1].startswith("https://"):
+                    entity_dict = {
+                        "post_id": post_id,
+                        "body": txt[-1],
+                        "entity_type": EntityType.LINK,
+                        "created_at": timestamp,
+                        "account_id": account_id,
+                        "retrieved_at": retrieved_at,
+                    }
 
-                entity_set.add(Entities(**entity_dict))
+                    entity_set.add(Entities(**entity_dict))
 
             elif record["attachment"]["type"] == "url":
                 entity_dict = {

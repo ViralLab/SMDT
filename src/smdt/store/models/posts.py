@@ -2,30 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, Mapping, Any, Tuple, List, Union
 
-
-def _normalize_point(
-    val: Optional[Union[str, Tuple[float, float], List[float]]],
-) -> Optional[str]:
-    """
-    Accepts:
-      - "(lon,lat)" string
-      - (lon, lat) tuple/list
-      - None
-    Returns:
-      - Canonical postgres 'point' literal: "(lon,lat)" or None
-    """
-    if val is None:
-        return None
-    if isinstance(val, str):
-        s = val.strip()
-        return s or None
-    if isinstance(val, (tuple, list)) and len(val) == 2:
-        lon, lat = val
-        try:
-            return f"({float(lon)},{float(lat)})"
-        except (TypeError, ValueError):
-            return None
-    return None
+from smdt.store.utils.geo import normalize_point as _normalize_point
 
 
 @dataclass(frozen=True, eq=True, unsafe_hash=True)
@@ -47,7 +24,9 @@ class Posts:
         comment_count: Number of comments (must be >= 0).
         quote_count: Number of quote-reposts (must be >= 0).
         bookmark_count: Number of bookmarks (must be >= 0).
-        location: Geographic location as Postgres ``point`` literal ``"(lon,lat)"``; also accepts ``(lon, lat)`` tuple.
+        location: Geographic location for the PostGIS ``geometry(Point, 4326)``
+            column, as EWKT text (``"SRID=4326;POINT(lon lat)"``) or a
+            ``(lon, lat)`` tuple/list (converted to EWKT automatically).
         platform: Canonical source platform (e.g. "twitter", "weibo").
         retrieved_at: Timestamp when the record was retrieved.
     """
@@ -116,7 +95,7 @@ class Posts:
             if isinstance(val, str) and val.strip() == "":
                 object.__setattr__(self, name, None)
 
-        # normalize location to postgres point literal "(lon,lat)"
+        # normalize location to PostGIS EWKT text
         norm_loc = _normalize_point(self.location)
         object.__setattr__(self, "location", norm_loc)
 
@@ -164,7 +143,7 @@ class Posts:
             self.comment_count,
             self.quote_count,
             self.bookmark_count,
-            self.location,  # "(lon,lat)" or None
+            self.location,  # EWKT text or None
             self.platform,
             self.created_at,
             self.retrieved_at,

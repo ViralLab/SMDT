@@ -84,9 +84,11 @@ class Entities:
         if not (self.post_id or self.community_id):
             raise ValueError("Either post_id or community_id must be provided")
 
-        # body must be a dict if provided (JSONB)
-        if self.body is not None and not isinstance(self.body, str):
-            raise ValueError("body must be a string (TEXT) or None")
+        # body is NOT NULL in the entities table -- required here too
+        if self.body is None:
+            raise ValueError("body is required and cannot be None")
+        if not isinstance(self.body, str):
+            raise ValueError("body must be a string (TEXT)")
 
     @staticmethod
     def insert_columns(include_id: bool = False) -> Tuple[str, ...]:

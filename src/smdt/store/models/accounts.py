@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Mapping, Any, Tuple, List
+from typing import Optional, Mapping, Any, Tuple, List, Union
+
+from smdt.store.utils.geo import normalize_point as _normalize_point
 
 
 @dataclass(frozen=True, eq=True)
@@ -14,7 +16,9 @@ class Accounts:
         username: Handle/username.
         profile_name: Display name.
         bio: Profile biography text.
-        location: Geographic location as Postgres ``point`` literal ``"(lon,lat)"``.
+        location: Geographic location for the PostGIS ``geometry(Point, 4326)``
+            column, as EWKT text (``"SRID=4326;POINT(lon lat)"``) or a
+            ``(lon, lat)`` tuple/list (converted to EWKT automatically).
         post_count: Number of posts authored (must be >= 0).
         friend_count: Number of accounts followed (must be >= 0).
         follower_count: Number of followers (must be >= 0).
@@ -33,7 +37,7 @@ class Accounts:
     username: Optional[str] = None
     profile_name: Optional[str] = None
     bio: Optional[str] = None
-    location: Optional[str] = None
+    location: Optional[Union[str, Tuple[float, float], List[float]]] = None
     post_count: Optional[int] = None
     friend_count: Optional[int] = None
     follower_count: Optional[int] = None
@@ -69,7 +73,6 @@ class Accounts:
             "username",
             "profile_name",
             "bio",
-            "location",
             "profile_image_url",
             "platform",
         ):
@@ -77,6 +80,9 @@ class Accounts:
             if isinstance(val, str):
                 s = val.strip()
                 object.__setattr__(self, name, s or None)
+
+        # normalize location to PostGIS EWKT text
+        object.__setattr__(self, "location", _normalize_point(self.location))
 
     # -------- DB helpers --------
     @staticmethod
@@ -110,7 +116,7 @@ class Accounts:
             self.username,
             self.profile_name,
             self.bio,
-            self.location,  # "(lon,lat)" or None for Postgres point
+            self.location,  # EWKT text or None
             self.post_count,
             self.friend_count,
             self.follower_count,

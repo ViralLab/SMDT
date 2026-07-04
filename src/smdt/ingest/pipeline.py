@@ -665,9 +665,13 @@ def run_pipeline(
                             )
                             _add_models_to_buffers(sub_result)
                         else:
-                            # You had this debug print originally
-                            print(record, src)
-                            raise ValueError("No models returned from standardizer")
+                            # Standardizer.standardize()'s contract is "0..N
+                            # models" -- an empty iterable is the documented
+                            # way to skip a record, so None is treated the
+                            # same way here (matching _process_file_worker_
+                            # with_db's handling of this same case), not as
+                            # an error.
+                            counters["empty_standardize"] += 1
 
                         # Flush overgrown class buffers
                         for cls in list(buffers.keys()):

@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv, find_dotenv
 
@@ -11,9 +11,22 @@ STANDARD_SCHEMA_SQL_PATH = os.path.join(
 )
 
 
+def _env_int(name: str, default: int) -> int:
+    """Read an int env var, falling back to `default` if unset/invalid."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+
 @dataclass
 class DBConfig:
     """Database configuration parameters.
+
+    Fields are re-read from the environment on every `DBConfig()` call (via
+    `default_factory`), not frozen at import time -- so changing `DB_*` env
+    vars mid-process (e.g. in a test) and then constructing a fresh
+    `DBConfig()` picks up the new values.
 
     Attributes:
         default_dbname: Default database name.
@@ -27,23 +40,14 @@ class DBConfig:
         standard_schema_path: Path to the standard schema SQL file.
     """
 
-    default_dbname: str = os.getenv("DEFAULT_DB_NAME", "")
-    user: str = os.getenv("DB_USER", "")
-    password: str = os.getenv("DB_PASSWORD", "")
-    owner: str = os.getenv("DB_OWNER", "")
-    host: str = os.getenv("DB_HOST", "localhost")
-    # parse integers from env with safe fallback to defaults
-    try:
-        _port_val = os.getenv("DB_PORT", "5432")
-        port: int = int(_port_val)
-    except Exception:
-        port: int = 5432
-    application_name: str = os.getenv("APP_NAME", "standarddb")
-    try:
-        _ct = os.getenv("DB_CONNECT_TIMEOUT", "10")
-        connect_timeout: int = int(_ct)
-    except Exception:
-        connect_timeout: int = 10
+    default_dbname: str = field(default_factory=lambda: os.getenv("DEFAULT_DB_NAME", ""))
+    user: str = field(default_factory=lambda: os.getenv("DB_USER", ""))
+    password: str = field(default_factory=lambda: os.getenv("DB_PASSWORD", ""))
+    owner: str = field(default_factory=lambda: os.getenv("DB_OWNER", ""))
+    host: str = field(default_factory=lambda: os.getenv("DB_HOST", "localhost"))
+    port: int = field(default_factory=lambda: _env_int("DB_PORT", 5432))
+    application_name: str = field(default_factory=lambda: os.getenv("APP_NAME", "standarddb"))
+    connect_timeout: int = field(default_factory=lambda: _env_int("DB_CONNECT_TIMEOUT", 10))
     standard_schema_path: str = STANDARD_SCHEMA_SQL_PATH
 
 
