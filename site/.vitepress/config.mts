@@ -40,47 +40,47 @@ export default defineConfig({
       '/api/': apiSidebar,
       '/recipes/': [
         {
-          text: 'Essentials',
+          text: 'Start Here',
           items: [
             { text: 'Overview', link: '/recipes/' },
             { text: 'Getting Started', link: '/recipes/getting-started' },
           ]
         },
         {
-          text: 'Ingestion',
+          text: '1. Ingest & Verify Your Data',
           items: [
-            { text: 'Using Pipelines', link: '/recipes/using-pipelines' },
-            { text: 'Standardizing Twitter v2', link: '/recipes/standardizing-twitter-v2' },
-            { text: 'Custom Standardizers', link: '/recipes/building-custom-standardizer' },
+            { text: 'Using Ingestion Pipelines', link: '/recipes/using-pipelines' },
+            { text: 'Standardizing Twitter API v2 Data', link: '/recipes/standardizing-twitter-v2' },
+            { text: 'Using the Database Inspector', link: '/recipes/analysis/inspector' },
           ]
         },
         {
-          text: 'Enrichment',
+          text: '2. Enrich Your Data',
           items: [
-            { text: 'NLP Enrichment', link: '/recipes/enrichment/nlp' },
-            { text: 'Building a Custom Enricher', link: '/recipes/enrichment/building-custom-enricher' },
+            { text: 'NLP Enrichment with LLMs', link: '/recipes/enrichment/nlp' },
           ]
         },
         {
-          text: 'Data Privacy',
+          text: '3. Protect & Share Your Data',
           items: [
             { text: 'Pseudonymization', link: '/recipes/pseudonymization' },
           ]
         },
         {
-          text: 'Analysis',
+          text: '4. Analyze Your Data',
           items: [
-            { text: 'Database Inspector', link: '/recipes/analysis/inspector' },
+            { text: 'Network Construction', link: '/recipes/networks/construction' },
+            { text: 'Temporal Networks', link: '/recipes/networks/temporal' },
             { text: 'Cross-Platform Analysis (MultiStore)', link: '/recipes/analysis/multistore' },
           ]
         },
         {
-          text: 'Network Analysis',
+          text: 'Advanced & Reference',
           items: [
-            { text: 'Network Construction', link: '/recipes/networks/construction' },
-            { text: 'Temporal Networks', link: '/recipes/networks/temporal' },
+            { text: 'Building a Custom Standardizer', link: '/recipes/building-custom-standardizer' },
+            { text: 'Building a Custom Enricher', link: '/recipes/enrichment/building-custom-enricher' },
           ]
-        }
+        },
       ],
       '/installation/': [
         {

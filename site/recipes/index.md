@@ -1,55 +1,42 @@
 # Recipes
 
-Welcome to the SMDT recipes collection. This section provides step-by-step guides and patterns for common tasks, from setting up your first project to advanced data analysis.
+Welcome to the SMDT recipes collection. Every dataset goes through roughly the same journey: **ingest** raw platform exports into a standardized database, optionally **enrich** and **protect** that data, then **analyze** it. The recipes below are ordered to match that journey — read them in order the first time through, or jump straight to whichever step you need.
 
-## Essentials
+## Start Here
 
-Start here to understand the core concepts of SMDT.
+New to SMDT? Start with [Getting Started](./getting-started.md) — it verifies your installation, configures your database connection, and runs your first standardizer. Every other recipe assumes you've done this.
 
-- **[Getting Started](./getting-started.md)**  
-  Learn how to verify your installation, configure your database connection, and run your first standardizer.
+## 1. Ingest & Verify Your Data
 
-## Ingestion & Standardization
+Bring raw platform exports into SMDT's standardized schema, then check the result before building on top of it.
 
-Learn how to bring data into the SMDT ecosystem.
+- **[Using Ingestion Pipelines](./using-pipelines.md)** — the core pipeline system: discovering files, batching database inserts, and handling errors at scale.
+- **[Standardizing Twitter API v2 Data](./standardizing-twitter-v2.md)** — a complete, concrete walkthrough using `TwitterV2Standardizer` end to end.
+- **[Using the Database Inspector](./analysis/inspector.md)** — sanity-check what you just ingested: row counts, per-column completeness, and enum distributions, before you rely on the data for anything else.
 
-- **[Using Ingestion Pipelines](./using-pipelines.md)**  
-  A guide to the core pipeline system. Learn how to discover files, manage bulk database insertions, and handle errors efficiently.
+## 2. Enrich Your Data
 
-- **[Standardizing Twitter API v2 Data](./standardizing-twitter-v2.md)**  
-  A complete guide to processing raw Twitter v2 JSON data. Covers generating sample data and using the `TwitterV2Standardizer` within an ingestion pipeline.
+Add computed features to posts you've already ingested — sentiment, toxicity, language, embeddings, or any custom signal.
 
-- **[Building a Custom Standardizer](./building-custom-standardizer.md)**  
-  Need to import data from a new source? This guide walks you through creating a custom standardizer class to map any data format to the SMDT schema.
+- **[NLP Enrichment with LLMs](./enrichment/nlp.md)** — configure local (Ollama, Hugging Face) or hosted (OpenAI, Anthropic, Gemini) models for tasks like sentiment analysis, toxicity detection, and topic classification, including the built-in privacy layer for hosted providers.
 
-## Enrichment
+## 3. Protect & Share Your Data
 
-Unlock insights from your social media data.
+Before sharing a dataset outside your team, pseudonymize identifiers and redact free text.
 
-- **[NLP Enrichment with LLMs](./enrichment/nlp.md)**  
-  Enhance your text data using Large Language Models (LLMs). Learn how to configure local (Ollama, HF) or remote (OpenAI) models to perform tasks like sentiment analysis, toxicity detection, and topic classification.
+- **[Pseudonymization](./pseudonymization.md)** — hash identifiers and redact sensitive text with configurable policies, detect broader PII with the optional Presidio-based engine, and handle GDPR erasure requests.
 
-## Data Privacy
+## 4. Analyze Your Data
 
-Ensure your data is safe to share.
+Turn standardized (and optionally enriched/protected) data into networks and cross-dataset insight.
 
-- **[Pseudonymization](./pseudonymization.md)**  
-  Learn how to pseudonymize identifiers and redact sensitive text using the built-in Pseudonymizer and configurable policies, detect broader PII with the optional Presidio-based engine, and handle GDPR erasure requests.
+- **[Network Construction](./networks/construction.md)** — build entity co-occurrence, bipartite, and user-interaction graphs over a time window.
+- **[Temporal Networks](./networks/temporal.md)** — extract how interactions evolve over time (e.g. weekly retweet graphs) for tools like Gephi or NetworkX.
+- **[Cross-Platform Analysis (MultiStore)](./analysis/multistore.md)** — attach multiple per-dataset databases into one DuckDB connection and join/union across them with plain SQL.
 
-## Analysis
+## Advanced & Reference
 
-Verify your data quality and schema health.
+Read these only if you need them — they extend SMDT rather than continue the core journey above.
 
-- **[Using the Database Inspector](./analysis/inspector.md)**  
-  Learn how to generate reports on table row counts, column completeness, and enum distributions.
-
-## Network Analysis
-
-Construct and analyze networks from your data.
-
-- **[Network Construction](./networks/construction.md)**  
-  Create networks such as Entity Co-occurrence (Hashtags), Bipartite (User-Hashtag), or basic User Interaction graphs over a specific time window.
-
-- **[Temporal Networks](./networks/temporal.md)**  
-  Analyze how interactions evolve over time. This recipe shows how to extract temporal networks (e.g., weekly retweet graphs) from your database for use with tools like Gephi or NetworkX.
-
+- **[Building a Custom Standardizer](./building-custom-standardizer.md)** — map a new, unsupported data source into SMDT's schema.
+- **[Building a Custom Enricher](./enrichment/building-custom-enricher.md)** — write your own enricher from scratch, step by step.

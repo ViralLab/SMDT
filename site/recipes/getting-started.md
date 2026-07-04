@@ -71,9 +71,6 @@ except Exception as e:
 
 ## Next Steps
 
-Now that you can connect to the database and run a standardizer, learn how to scale up to thousands of files:
+Now that you can connect to the database and run a standardizer, the next step is scaling that up to thousands of files with [Using Ingestion Pipelines](./using-pipelines.md).
 
-- **[Using Ingestion Pipelines](./using-pipelines.md)**  
-  Process entire directories of JSON/JSONL files in batches with checkpointing.
-- **[Standardizing Twitter API v2 Data](./standardizing-twitter-v2.md)**  
-  A complete end-to-end example from data generation to database insertion.
+That's the first of several steps after ingestion -- enrichment, privacy, and analysis. See the [Recipes Overview](./index.md) for the full path.
