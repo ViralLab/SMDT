@@ -143,12 +143,6 @@ CREATE TABLE IF NOT EXISTS post_enrichments (
   UNIQUE (model_id, post_id)
 );
 
-CREATE TABLE IF NOT EXISTS hash_map (
-  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  hash_key TEXT NOT NULL UNIQUE,
-  hash_value TEXT,
-  created_at TIMESTAMPTZ NOT NULL
-);
 """
 
 

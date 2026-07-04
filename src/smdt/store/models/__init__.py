@@ -18,7 +18,6 @@ from .actions import Actions, ActionType
 from .posts import Posts
 from .entities import Entities, EntityType
 from .post_enrichments import PostEnrichments
-from .hashmap import HashMap
 from .dataset_meta import DatasetMeta
 
 
@@ -30,7 +29,6 @@ class ModelNames(StrEnum):
     Entities = "Entities"
     AccountEnrichments = "AccountEnrichments"
     PostEnrichments = "PostEnrichments"
-    HashMap = "HashMap"
     DatasetMeta = "DatasetMeta"
 
 
@@ -63,10 +61,6 @@ MODEL_REGISTRY = {
         "table": "entities",
         "jsonb_fields": {"body"},
     },
-    HashMap: {
-        "table": "hashmap",
-        "jsonb_fields": set(),
-    },
     DatasetMeta: {
         "table": "dataset_meta",
         "jsonb_fields": set(),
@@ -83,7 +77,6 @@ __all__ = [
     "Entities",
     "AccountEnrichments",
     "PostEnrichments",
-    "HashMap",
     "DatasetMeta",
     "ActionType",
     "EntityType",

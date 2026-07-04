@@ -137,13 +137,6 @@ CREATE TABLE IF NOT EXISTS post_enrichments (
     UNIQUE (model_id, post_id)
 );
 
-CREATE TABLE IF NOT EXISTS hash_map (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    hash_key TEXT NOT NULL UNIQUE,
-    hash_value TEXT,
-    created_at TIMESTAMPTZ NOT NULL
-);
-
 -- One row per database: describes the dataset ingested into this DB.
 -- dataset_description accumulates a timestamped log entry per ingestion run.
 CREATE TABLE IF NOT EXISTS dataset_meta (
