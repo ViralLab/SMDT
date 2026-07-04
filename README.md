@@ -15,6 +15,7 @@ The goal is to provide a flexible, consistent data model to enable reproducible 
     - [2. Inspect Data Quality](#2-inspect-data-quality)
     - [3. Build Networks](#3-build-networks)
     - [4. Enrich Data](#4-enrich-data)
+    - [5. Cross-Platform Analysis](#5-cross-platform-analysis)
 - [Project Structure](#project-structure)
 - [Data Model](#data-model)
 - [Development & Testing](#development--testing)
@@ -27,6 +28,7 @@ The goal is to provide a flexible, consistent data model to enable reproducible 
 * **Enrich & Label:** Apply computed features (language detection, toxicity scores, embeddings) via a local or server-backed enrichment framework.
 * **Build Networks:** Generate edge lists (User–User, Entity–Cooccurrence) and bipartite graphs compatible with NetworkX and Gephi.
 * **Scale:** Designed for streaming; handles datasets that do not fit in memory using incremental builders and Parquet exports.
+* **Cross-Platform Analysis:** Attach multiple per-dataset databases into one DuckDB connection with `MultiStore` and join/union across them with plain SQL, since every dataset shares the same standardized schema.
 
 
 ## Prerequisites & Database Setup
@@ -286,6 +288,26 @@ run_enricher("text_generation", db=db, config=config)
 
 See [`site/recipes/enrichment/nlp.md`](site/recipes/enrichment/nlp.md) for one full example per provider (OpenAI, Anthropic, Gemini, Ollama, Hugging Face).
 
+### 5. Cross-Platform Analysis
+
+Each dataset lives in its own database, but they all share the same schema. `MultiStore` attaches multiple datasets into one DuckDB connection so you can join or union across them with plain SQL:
+
+```python
+from smdt.multistore import MultiStore
+
+with MultiStore() as ms:
+    ms.attach("twitter", db_name="twitter_db")
+    ms.attach("bluesky", db_name="bluesky_db")
+
+    df = ms.query("""
+        SELECT tw.username, tw.follower_count AS tw_followers, bs.follower_count AS bs_followers
+        FROM twitter.accounts tw
+        JOIN bluesky.accounts bs ON tw.username = bs.username
+    """)
+```
+
+See [`site/recipes/analysis/multistore.md`](site/recipes/analysis/multistore.md) for identity-linking patterns, mixing in Parquet/CSV files, and a PostGIS `location`-column caveat.
+
 
 ## Project Structure
 
@@ -298,6 +320,7 @@ SMDT/
 │   ├── ingest/                # Ingestion pipelines and deduplication logic
 │   ├── inspector/             # Data quality inspection utilities
 │   ├── io/                    # Streaming readers (JSONL, CSV, ZIP)
+│   ├── multistore/            # Cross-dataset analysis via DuckDB (MultiStore)
 │   ├── networks/              # Network builders and streaming helpers
 │   ├── standardizers/         # Platform-specific normalizers (Twitter, Bluesky, etc.)
 │   └── store/                 # DB models and StandardDB abstraction

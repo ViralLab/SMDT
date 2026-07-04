@@ -71,6 +71,7 @@ export default defineConfig({
           text: 'Analysis',
           items: [
             { text: 'Database Inspector', link: '/recipes/analysis/inspector' },
+            { text: 'Cross-Platform Analysis (MultiStore)', link: '/recipes/analysis/multistore' },
           ]
         },
         {
