@@ -140,39 +140,3 @@ def read_from_filelike(
             os.unlink(tmp_path)
         except Exception:
             pass
-
-
-def get_reader(uri: str, *, content_type: Optional[str] = None) -> Optional[Reader]:
-    """
-    Return the first registered reader that supports the given URI / content type.
-    """
-    for r in _READERS:
-        try:
-            if r.supports(uri, content_type=content_type):
-                return r
-        except Exception:
-            # Ignore a misbehaving plugin and try the next
-            continue
-    return None
-
-
-def read(uri: str, **kwargs) -> Iterable[dict]:
-    """
-    Convenience helper: select a reader and iterate records.
-
-    Prefers Reader.stream(...). Falls back to Reader.read(...) for legacy plugins.
-    """
-    content_type = kwargs.pop("content_type", None)
-    r = get_reader(uri, content_type=content_type)
-    if not r:
-        raise RuntimeError(f"No reader found for {uri}")
-
-    # Prefer the modern stream(...) API
-    if hasattr(r, "stream"):
-        return r.stream(uri, **kwargs)  # type: ignore[attr-defined]
-    # Back-compat with older readers implementing read(...)
-    if hasattr(r, "read"):
-        return r.read(uri, **kwargs)  # type: ignore[attr-defined]
-
-    # Shouldn’t get here because of the check in discover()
-    raise RuntimeError(f"Reader {type(r).__name__} does not implement stream/read")

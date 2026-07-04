@@ -87,10 +87,10 @@ class TarReader(Reader):
                 if fobj is None:
                     continue
 
-                    # Single handoff point: reader selection + filelike vs tempfile fallback.
-                    yield from read_from_filelike(
-                        fobj, member_name=mname, **child_kwargs
-                    )
+                # Single handoff point: reader selection + filelike vs tempfile fallback.
+                yield from read_from_filelike(
+                    fobj, member_name=mname, **child_kwargs
+                )
 
 
 from . import registry
