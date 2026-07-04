@@ -58,6 +58,7 @@ export default defineConfig({
           text: 'Enrichment',
           items: [
             { text: 'NLP Enrichment', link: '/recipes/enrichment/nlp' },
+            { text: 'Building a Custom Enricher', link: '/recipes/enrichment/building-custom-enricher' },
           ]
         },
         {
