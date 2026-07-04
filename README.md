@@ -14,6 +14,7 @@ The goal is to provide a flexible, consistent data model to enable reproducible 
     - [1. Standardize Raw Exports](#1-standardize-raw-exports)
     - [2. Inspect Data Quality](#2-inspect-data-quality)
     - [3. Build Networks](#3-build-networks)
+    - [4. Enrich Data](#4-enrich-data)
 - [Project Structure](#project-structure)
 - [Data Model](#data-model)
 - [Development & Testing](#development--testing)
@@ -252,6 +253,38 @@ print(result.edges.head())
 # Export to Parquet for Gephi/NetworkX
 result.edges.to_parquet("edges.parquet")
 ```
+
+### 4. Enrich Data
+
+Apply computed features (language detection, toxicity, embeddings, LLM labels, ...) and store results in `post_enrichments`/`account_enrichments`. Local enrichers run entirely in-process:
+
+```python
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+
+db = StandardDB(db_name="mydb")
+
+# Local: no network calls, no API key needed
+run_enricher("language_detection", db=db)
+```
+
+Server-backed enrichers (LLMs, embeddings APIs) use provider factories to cut config boilerplate, plus an optional built-in privacy layer to redact/hash post content before it leaves the machine:
+
+```python
+import os
+from smdt.enrichers.text_generation import TextGenerationConfig
+
+config = TextGenerationConfig.for_openai(
+    model="gpt-4o-mini",
+    api_key=os.environ["OPENAI_API_KEY"],
+    user_template="Classify the sentiment of this post: {body}",
+    privacy_fields=["body"],  # optional: redact PII before it leaves the machine
+    pepper=os.environ["PSEUDONYMIZATION_PEPPER"].encode(),
+)
+run_enricher("text_generation", db=db, config=config)
+```
+
+See [`site/recipes/enrichment/nlp.md`](site/recipes/enrichment/nlp.md) for one full example per provider (OpenAI, Anthropic, Gemini, Ollama, Hugging Face).
 
 
 ## Project Structure
