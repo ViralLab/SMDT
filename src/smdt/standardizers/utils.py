@@ -110,6 +110,35 @@ def extract_hashtags(text: str, lowercase: bool = True) -> List[str]:
 # URLs with urlextract
 # ---------------------------
 
+_url_extractor = None
+
+
+def _get_url_extractor():
+    """Lazily construct a module-level URLExtract singleton.
+
+    URLExtract() acquires a cross-process file lock on its cached TLD list
+    (shared by every process using this environment) on every construction --
+    constructing one per extract_urls() call meant every single call paid
+    that lock's cost, which is harmless for one process but causes heavy
+    lock contention once multiple processes (parallel ingestion workers)
+    call this concurrently. Constructing once per process and reusing it
+    avoids that entirely.
+
+    Raises:
+        ImportError: If urlextract is not installed.
+    """
+    global _url_extractor
+    if _url_extractor is None:
+        try:
+            from urlextract import URLExtract
+        except ImportError as e:
+            raise ImportError(
+                "URL extraction requires the 'urlextract' library. "
+                "Install with: pip install urlextract"
+            ) from e
+        _url_extractor = URLExtract()
+    return _url_extractor
+
 
 def extract_urls(
     text: str, ensure_scheme: bool = True, unique: bool = True
@@ -127,15 +156,7 @@ def extract_urls(
     Raises:
         ImportError: If urlextract is not installed.
     """
-    try:
-        from urlextract import URLExtract
-    except ImportError as e:
-        raise ImportError(
-            "URL extraction requires the 'urlextract' library. "
-            "Install with: pip install urlextract"
-        ) from e
-
-    extractor = URLExtract()
+    extractor = _get_url_extractor()
     text = _to_text(text)
     urls = extractor.find_urls(text or "")
 

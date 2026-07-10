@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
@@ -84,6 +85,29 @@ class PipelineConfig:
         reset_checkpoint: If True, reset the checkpoint file at the start of the run.
         dataset_description: Optional operator-supplied note about this ingestion run,
             appended as a timestamped log entry to the DB's single `dataset_meta` row.
+        num_workers: Number of files to process concurrently via a process pool.
+            Defaults to 1 (today's single-threaded behavior, unchanged). Values
+            greater than 1 dispatch whole files to separate worker processes,
+            each with its own DB connection -- see `_process_file_worker_with_db`.
+            Standardizing is CPU-bound and single-threaded per file, so this is
+            the lever for using more than one core. Progress granularity is
+            coarser in this mode: `flush` events are reported once per model
+            per file (aggregated), not streamed live at every intra-file
+            buffer flush the way they are with `num_workers=1`.
+
+            Also note: `dedup_best` only ever dedupes within one flush's
+            buffer. With num_workers=1 that buffer can span many files (up to
+            batch_size records, or a whole run below that), but with
+            num_workers>1 each worker's buffer is scoped to its own single
+            file -- so a duplicate that happens to land in two different
+            files will produce two rows instead of one, *unless* the model's
+            table has a real DB-level unique constraint for `on_conflict` to
+            catch it (true today for Accounts/Communities/*Enrichments, not
+            for Posts/Entities/Actions -- see the schema). This isn't
+            specific to parallel mode -- the same gap exists at
+            num_workers=1 once a duplicate's two occurrences land in
+            different flushes -- parallel mode just makes the window much
+            smaller (one file instead of one batch), so it shows up more.
     """
 
     batch_size: int = 1_000  # records -> standardizer batch size
@@ -94,6 +118,7 @@ class PipelineConfig:
     checkpoint_file: str | None = None
     reset_checkpoint: bool | None = False
     dataset_description: str | None = None
+    num_workers: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -201,41 +226,39 @@ def _stamp_platform(
 
 
 def _process_file_worker_with_db(
-    args: Tuple[
-        Any,  # fp
-        Any,  # hints
-        Optional[Dict[str, Dict[str, Any]]],  # reader_kwargs
-        int,  # batch_size
-        int,  # chunk_size
-        Dict[Type, str],  # on_conflict
-        StandardDB,  # parent db object (we'll call connect())
-        Standardizer,  # standardizer
-    ],
+    fp: Any,
+    hints: Any,
+    reader_kwargs_cfg: Optional[Dict[str, Dict[str, Any]]],
+    batch_size: int,
+    chunk_size: int,
+    on_conflict: Dict[Type, str],
+    db: StandardDB,
+    standardizer: Standardizer,
 ) -> Tuple[Mapping[str, int], float, str]:
-    """Worker that processes a single file and writes directly to DB.
+    """Worker that processes a single file end-to-end and writes to the DB.
 
-    Each worker calls db.connect() to get its own connection.
+    Dispatched to a separate process by `run_pipeline` when `num_workers > 1`
+    (via `ProcessPoolExecutor`) -- must stay a top-level function so it can be
+    pickled. `db` is a `StandardDB` with no open connection (its `__init__`
+    never holds one), so it pickles fine across the process boundary; this
+    worker calls `db.connect()` itself to get a connection private to this
+    process. All standardizing, buffering, dedup, and flushing for the file
+    happens here; the caller only gets back a summary (not a live progress
+    stream -- see `PipelineConfig.num_workers`'s docstring).
 
     Args:
-        args: Tuple containing worker arguments.
+        fp: FilePlan for the single file this worker processes.
+        hints: Hints dictionary passed to SourceInfo.
+        reader_kwargs_cfg: Reader kwargs configuration.
+        batch_size: Records per model-class buffer before flushing.
+        chunk_size: Chunk size forwarded to insert_with_fallbacks.
+        on_conflict: Dict mapping model types to on-conflict strategies.
+        db: Destination database (connection-less; opened here).
+        standardizer: Standardizer instance for this dataset.
 
     Returns:
         Tuple of (counters, elapsed_time, file_path).
     """
-    (
-        fp,
-        hints,
-        reader_kwargs_cfg,
-        batch_size,
-        chunk_size,
-        on_conflict,
-        parent_db,
-        standardizer,
-    ) = args
-
-    # Each process opens its own connection
-    db: StandardDB = parent_db
-
     t0_file = perf_counter()
     buffers: DefaultDict[Type, List[DBModel]] = defaultdict(list)
     counters = Counter()
@@ -301,16 +324,11 @@ def _process_file_worker_with_db(
     try:
         rec_iter = _iter_file_records_global(fp, hints, reader_kwargs_cfg)
 
-        # Nice per-file progress bar (records in this file)
-        from pathlib import Path
-
-        file_name = Path(fp.path).name
-
-        for record, src in tqdm.tqdm(
-            rec_iter,
-            desc=f"{file_name} (records)",
-            leave=False,
-        ):
+        # No per-record progress bar here: multiple worker processes writing
+        # tqdm bars to the same stdout concurrently would interleave/garble.
+        # run_pipeline's main process shows one bar over completed files
+        # instead (see the num_workers > 1 branch).
+        for record, src in rec_iter:
             try:
                 sub_result = standardizer.standardize((record, src))
                 if sub_result is not None:
@@ -636,7 +654,122 @@ def run_pipeline(
             reader_name_fallback=fp.reader_name,
         )
 
+    # ------------------------- parallel dispatch (num_workers > 1) -----------
+
+    def _run_parallel(num_workers: int) -> None:
+        """Dispatch files to a process pool, one worker per file.
+
+        Standardizing, buffering, dedup, and flushing for a file all happen
+        inside the worker process (see `_process_file_worker_with_db`) using
+        its own DB connection. The checkpoint file and the caller's
+        `progress` callback are only ever touched here, in the main process,
+        once a worker's file completes -- writing the checkpoint from
+        multiple processes concurrently would risk corrupting it, and an
+        arbitrary user-supplied `progress` closure may not even be picklable
+        to send into a worker in the first place.
+        """
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as pool:
+            futures: Dict[concurrent.futures.Future, Any] = {}
+            for fp in files_to_process:
+                _notify("file_start", path=fp.path)
+                future = pool.submit(
+                    _process_file_worker_with_db,
+                    fp,
+                    hints,
+                    cfg.reader_kwargs,
+                    cfg.batch_size,
+                    cfg.chunk_size,
+                    on_conflict,
+                    db,
+                    standardizer,
+                )
+                futures[future] = fp
+
+            for future in tqdm.tqdm(
+                concurrent.futures.as_completed(futures),
+                total=len(futures),
+                desc="Pipeline files (parallel)",
+                colour="red",
+            ):
+                fp = futures[future]
+                try:
+                    file_counters, elapsed, path = future.result()
+                except Exception as e:
+                    counters["record_errors"] += 1
+                    log.error(
+                        "Worker for %s raised an unhandled exception: %s",
+                        fp.path,
+                        e,
+                        exc_info=True,
+                    )
+                    _notify(
+                        "file_end",
+                        path=fp.path,
+                        records=0,
+                        models=0,
+                        record_errors=1,
+                        row_failures=0,
+                        elapsed=0.0,
+                    )
+                    continue
+
+                for key, value in file_counters.items():
+                    counters[key] += value
+                    if key.startswith("flush_"):
+                        _notify(
+                            "flush",
+                            model=key[len("flush_") :],
+                            count=value,
+                            elapsed=elapsed,
+                        )
+
+                _mark_file_completed(path)
+                _notify(
+                    "file_end",
+                    path=path,
+                    records=file_counters.get("records", 0),
+                    models=file_counters.get("models", 0),
+                    record_errors=file_counters.get("record_errors", 0),
+                    row_failures=file_counters.get("row_failures", 0),
+                    elapsed=elapsed,
+                )
+                log.info(
+                    "Finished %s with %d records, %d models (record_errors=%d)",
+                    path,
+                    file_counters.get("records", 0),
+                    file_counters.get("models", 0),
+                    file_counters.get("record_errors", 0),
+                )
+
     # ------------------------------- main loop -------------------------------
+    if cfg.num_workers and cfg.num_workers > 1:
+        try:
+            _run_parallel(cfg.num_workers)
+        finally:
+            _notify(
+                "done",
+                files=counters["files"],
+                records=counters["records"],
+                models=counters["models"],
+                record_errors=counters.get("record_errors", 0),
+                row_failures=counters.get("row_failures", 0),
+                failed_models_total=counters.get("failed_models", 0),
+                failed_models_by_class=dict(failures_by_class),
+                elapsed=perf_counter() - t0_all,
+            )
+            log.info(
+                "Pipeline finished (parallel, %d workers): %d files, %d records, "
+                "%d models in %.2fs (record_errors=%d, failed_models_total=%d)",
+                cfg.num_workers,
+                counters["files"],
+                counters["records"],
+                counters["models"],
+                perf_counter() - t0_all,
+                counters.get("record_errors", 0),
+                counters.get("failed_models", 0),
+            )
+        return
+
     try:
         for fp in tqdm.tqdm(files_to_process, desc="Pipeline files", colour="red"):
             t0_file = perf_counter()
