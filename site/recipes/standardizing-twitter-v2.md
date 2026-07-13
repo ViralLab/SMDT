@@ -148,6 +148,30 @@ if __name__ == "__main__":
     main()
 ```
 
+::: tip Tuning chunk interval, space partitioning, and compression
+`initialize=True` applies the standard schema with default hypertable tuning
+(chunk interval, space partitioning, compression) chosen for a large
+Twitter-scale dataset. If your dataset has a very different volume or
+shape, pass a custom `hypertable_config`:
+
+```python
+from dataclasses import replace
+from datetime import timedelta
+from smdt.store.schema_config import SchemaConfig
+
+# Example: a much smaller dataset benefits from smaller chunks than the
+# 7-day default (fewer chunks fan out to scan, but each stays small).
+custom_schema = SchemaConfig(tables={
+    **SchemaConfig().tables,
+    "posts": replace(SchemaConfig().tables["posts"], chunk_time_interval=timedelta(days=1)),
+})
+db = StandardDB("twitter_v2_sample", initialize=True, hypertable_config=custom_schema)
+```
+
+See `src/smdt/store/schema_config.py` for every tunable field (per-table
+chunk interval, space partitioning, compression segment/policy).
+:::
+
 ## 3. Run the Standardization
 
 Execute the standardization script:

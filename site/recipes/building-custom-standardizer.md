@@ -102,7 +102,11 @@ def main():
     print(f"Generated sample data: {csv_filename}")
 
     # Initialize the Database
-    # initialize=True creates the necessary tables if they don't exist
+    # initialize=True creates the necessary tables if they don't exist, with
+    # default hypertable tuning (chunk interval, space partitioning,
+    # compression) -- pass hypertable_config=... to customize for a
+    # different dataset volume/shape; see the tip in
+    # standardizing-twitter-v2.md's "Run the Standardization" step.
     db = StandardDB("custom_smdt_db", initialize=True)
 
     # Initialize our Custom Standardizer

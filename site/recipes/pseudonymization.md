@@ -10,6 +10,7 @@ SMDT provides a built-in `Pseudonymizer` to process a source database into a des
 - **Configurable Policy**: Define per-table rules for what to hash, redact, drop, or blank out.
 - **GDPR Erasure**: Delete or scrub a specific person's data on request, across the raw and/or pseudonymized database, without corrupting other people's replies or interactions.
 - **Batched Processing**: memory-efficient processing of large tables.
+- **Parallel Processing**: optionally dispatch the hashing/redaction step across multiple processes for CPU-bound tables.
 
 ## Basic Usage
 
@@ -125,6 +126,39 @@ pz = Pseudonymizer(cfg, policy)
 # Run the process
 pz.run()
 ```
+
+### 5. Parallel Processing (optional)
+
+For large tables, the hashing/redaction step (not the database read or
+write) can be dispatched across multiple processes:
+
+```python
+cfg = PseudonymizeConfig(
+    src_db_name="source_db",
+    dst_db_name="target_db_pseudo",
+    pepper=pseudo_vars.pepper,
+    num_workers=8,             # process rows in parallel (default: 1)
+    transform_chunk_size=500,  # rows per worker task
+)
+```
+
+Unlike ingestion's parallel mode, this never opens extra database
+connections: reading from the source and writing to the destination both
+stay in the main process the whole time, and only the CPU-bound
+hash/redact step moves to worker processes. `num_workers=1` is unchanged
+from the original single-process behavior, so this is purely opt-in. Worth
+it mainly for tables with substantial free-text redaction (e.g. `posts`,
+`entities`) — tables that are mostly structured fields see little benefit
+since there's not much CPU work to parallelize in the first place.
+
+### 6. Tuning the Destination Schema (optional)
+
+The destination database's hypertable tuning (chunk interval, space
+partitioning, compression) defaults to the same tuning as the source
+schema. Override it the same way as `StandardDB(initialize=True, ...)` —
+see the [Standardizing Twitter v2](./standardizing-twitter-v2.md) recipe's
+tip on `hypertable_config` — by passing `hypertable_config=` to
+`PseudonymizeConfig`.
 
 ## Complete Example
 
