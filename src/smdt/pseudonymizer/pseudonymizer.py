@@ -6,11 +6,13 @@ from typing import Iterable, Dict, Any, Optional, Tuple, List
 from psycopg.rows import dict_row
 from ..store.standard_db import StandardDB
 from ..store.models import MODEL_REGISTRY
+from ..store.schema_config import SchemaConfig
 from .pseudonyms import Hasher, Algorithm
 from .redact import Redactor
 from .policy import PseudonymPolicy, DEFAULT_POLICY
 from .pii_policy import PiiPolicy
 
+import concurrent.futures
 import time
 import logging, sys
 
@@ -53,6 +55,19 @@ class PseudonymizeConfig:
         custom_pii_recognizers: Extra PatternRecognizers scoped per
             (table, column), layered on top of the built-in platform ones.
             Only used if pii_policy is set.
+        num_workers: Number of processes to use for the transform step
+            (hashing/redaction). 1 (default) is the original single-process
+            behavior. Fetch (one cursor) and flush (one writer) stay
+            single-owner in the main process regardless of num_workers --
+            only the CPU-bound per-row transform is dispatched to workers,
+            so there's no concurrent DB access to worry about.
+        transform_chunk_size: Number of rows sent to a worker per task when
+            num_workers > 1. Only relevant if num_workers > 1.
+        hypertable_config: Per-table chunk interval/space partitioning/
+            compression tuning for the destination hypertables. Defaults to
+            SchemaConfig() (this project's own Election2023 Twitter
+            benchmark tuning) if not provided -- override for a dataset
+            with a different volume/shape. See store/schema_config.py.
     """
 
     src_db_name: str
@@ -68,6 +83,115 @@ class PseudonymizeConfig:
     pii_policy: Optional[PiiPolicy] = None
     nlp_configuration: Optional[Dict[str, Any]] = None
     custom_pii_recognizers: Optional[Dict[Tuple[str, str], List[Any]]] = None
+    num_workers: int = 1
+    transform_chunk_size: int = 500
+    hypertable_config: Optional[SchemaConfig] = None
+
+
+def _transform_row_impl(
+    table: str,
+    row: Dict[str, Any],
+    policy: PseudonymPolicy,
+    hasher: Hasher,
+    redactor: Redactor,
+    pii_engine: Any,
+    pii_policy: Optional[PiiPolicy],
+) -> Dict[str, Any]:
+    """Pure transform logic, shared by the serial path (Pseudonymizer.
+    _transform_row, called with self's own hasher/redactor/etc.) and worker
+    processes in the parallel path (called with each worker's own
+    independently-constructed hasher/redactor/etc. -- see _init_worker)."""
+    out: Dict[str, Any] = {}
+    if table == "entities":
+        et = row.get("entity_type")
+        raw_body = row.get("body")
+        for col, val in row.items():
+            if col == "body":
+                continue
+            if policy.is_drop(table, col):
+                continue
+            if policy.is_hash(table, col):
+                out[col] = hasher.make(val)
+            elif policy.is_blank(table, col):
+                out[col] = None
+            else:
+                out[col] = val
+        out["body"] = redactor.sanitize_entity_body(
+            str(et) if et is not None else "", raw_body
+        )
+        return out
+
+    platform = row.get("platform")
+    for col, val in row.items():
+        if policy.is_drop(table, col):
+            continue
+        if policy.is_hash(table, col):
+            out[col] = hasher.make(val)
+        elif policy.is_redact(table, col):
+            if pii_engine is not None and pii_policy is not None and pii_policy.is_configured(table, col):
+                out[col] = pii_engine.redact(val, table, col, pii_policy, platform=platform)
+            else:
+                out[col] = redactor.redact(val)
+        elif policy.is_blank(table, col):
+            out[col] = None
+        else:
+            out[col] = val
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Worker-process globals for num_workers > 1. Each worker process builds its
+# own Hasher/Redactor/PiiEngine exactly once (via _init_worker, a
+# ProcessPoolExecutor initializer), not per row or per batch -- same lesson
+# as the extract_urls() singleton fix in standardizers/utils.py. Workers
+# never open a database connection: fetch and flush both stay single-owner
+# in the main process (see Pseudonymizer._copy_table_parallel).
+# ---------------------------------------------------------------------------
+_worker_hasher: Optional[Hasher] = None
+_worker_redactor: Optional[Redactor] = None
+_worker_pii_engine: Any = None
+_worker_policy: Optional[PseudonymPolicy] = None
+_worker_pii_policy: Optional[PiiPolicy] = None
+
+
+def _init_worker(cfg: "PseudonymizeConfig", policy: PseudonymPolicy) -> None:
+    global _worker_hasher, _worker_redactor, _worker_pii_engine, _worker_policy, _worker_pii_policy
+    _worker_policy = policy
+    _worker_pii_policy = cfg.pii_policy
+    _worker_hasher = Hasher(
+        algo=cfg.algorithm, pepper=cfg.pepper, normalizer=lambda s: s.strip().lower()
+    )
+    _worker_redactor = Redactor(
+        handle_mapper=lambda h: _worker_hasher.make(h) or "", map_host=lambda host: host
+    )
+    _worker_pii_engine = None
+    if cfg.pii_policy is not None:
+        from .pii_engine import PiiEngine
+
+        _worker_pii_engine = PiiEngine(
+            hasher=_worker_hasher,
+            nlp_configuration=cfg.nlp_configuration,
+            custom_recognizers=cfg.custom_pii_recognizers,
+        )
+
+
+def _transform_batch_worker(table: str, rows: List[Dict[str, Any]]) -> List[Any]:
+    """Runs in a worker process: transform + hydrate one batch of rows.
+    No DB access here -- purely CPU-bound work."""
+    out = []
+    for row in rows:
+        pseudo_row = _transform_row_impl(
+            table, row, _worker_policy, _worker_hasher, _worker_redactor,
+            _worker_pii_engine, _worker_pii_policy,
+        )
+        try:
+            model_obj = Pseudonymizer._row_to_model(table, pseudo_row)
+        except TypeError:
+            allowed = set(Pseudonymizer._insert_columns_for_table(table))
+            slim = {k: v for k, v in pseudo_row.items() if k in allowed}
+            model_obj = Pseudonymizer._row_to_model(table, slim)
+        out.append(model_obj)
+    return out
 
 
 class Pseudonymizer:
@@ -126,7 +250,7 @@ class Pseudonymizer:
         with _res.as_file(
             _res.files(self.cfg.schema_package) / self.cfg.schema_resource
         ) as p:
-            self.dst.init_schema(str(p))
+            self.dst.init_schema(str(p), hypertable_config=self.cfg.hypertable_config)
 
     def run(self) -> None:
         """Run the pseudonymization process for all configured tables.
@@ -205,7 +329,7 @@ class Pseudonymizer:
                     with _res.as_file(
                         _res.files(self.cfg.schema_package) / self.cfg.schema_resource
                     ) as p:
-                        self.dst.init_schema(str(p))
+                        self.dst.init_schema(str(p), hypertable_config=self.cfg.hypertable_config)
                 else:
                     log.info("Keeping existing destination schema.")
             else:
@@ -219,7 +343,7 @@ class Pseudonymizer:
         with _res.as_file(
             _res.files(self.cfg.schema_package) / self.cfg.schema_resource
         ) as p:
-            self.dst.init_schema(str(p))
+            self.dst.init_schema(str(p), hypertable_config=self.cfg.hypertable_config)
         log.info("Applied pseudonymized schema to destination database.")
 
     def _select_iter(self, table: str) -> Iterable[Dict[str, Any]]:
@@ -246,21 +370,19 @@ class Pseudonymizer:
                 if self.cfg.time_window and self._has_col(table, "created_at"):
                     where = " WHERE created_at >= %s AND created_at < %s"
                     params = [self.cfg.time_window[0], self.cfg.time_window[1]]
-                # Prefer created_at: it's the hypertable partitioning column,
-                # so TimescaleDB can merge per-chunk time indexes
-                # (ChunkAppend) instead of sorting the whole table -- ORDER
-                # BY id instead forces a full Gather Merge + Sort across
-                # every chunk (measured: ~160s vs ~0.2s to first row on a
-                # 64M-row table), with no benefit over created_at (both give
-                # a stable, reproducible order; created_at is also the more
-                # insert-friendly order for the destination hypertable).
-                if self._has_col(table, "created_at"):
-                    order = "created_at"
-                elif self._has_col(table, "id"):
-                    order = "id"
-                else:
-                    order = "1"
-                cur.execute(f"SELECT * FROM {table}{where} ORDER BY {order}", params)
+                # No ORDER BY: row order has no effect on correctness here --
+                # _transform_row/_flush operate on each row independently,
+                # with no cross-row state, so the destination ends up as the
+                # same set of rows regardless of arrival order. Ordering by
+                # id forces a full Gather Merge + Sort across every chunk;
+                # ordering by created_at avoids that sort but still has to
+                # coordinate a ChunkAppend across every chunk (including
+                # thinly-populated historical ones) to keep results globally
+                # time-ordered. Without ORDER BY, Postgres can just Append
+                # chunks in whatever order it likes and start returning rows
+                # from the first one immediately -- no sort, no cross-chunk
+                # merge coordination at all.
+                cur.execute(f"SELECT * FROM {table}{where}", params)
                 batch = cur.fetchmany(self.cfg.chunk_rows)
                 total = 0
                 while batch:
@@ -302,48 +424,13 @@ class Pseudonymizer:
         Returns:
             Transformed row dictionary.
         """
-        out: Dict[str, Any] = {}
-        if table == "entities":
-            et = row.get("entity_type")
-            raw_body = row.get("body")
-            for col, val in row.items():
-                if col == "body":
-                    continue
-                if self.policy.is_drop(table, col):
-                    continue
-                if self.policy.is_hash(table, col):
-                    out[col] = self.hasher.make(val)
-                elif self.policy.is_blank(table, col):
-                    out[col] = None
-                else:
-                    out[col] = val
-            out["body"] = self.redactor.sanitize_entity_body(
-                str(et) if et is not None else "", raw_body
-            )
-            return out
+        return _transform_row_impl(
+            table, row, self.policy, self.hasher, self.redactor,
+            self.pii_engine, self.cfg.pii_policy,
+        )
 
-        platform = row.get("platform")
-        for col, val in row.items():
-            if self.policy.is_drop(table, col):
-                continue
-            if self.policy.is_hash(table, col):
-                out[col] = self.hasher.make(val)
-            elif self.policy.is_redact(table, col):
-                if self.pii_engine is not None and self.cfg.pii_policy.is_configured(
-                    table, col
-                ):
-                    out[col] = self.pii_engine.redact(
-                        val, table, col, self.cfg.pii_policy, platform=platform
-                    )
-                else:
-                    out[col] = self.redactor.redact(val)
-            elif self.policy.is_blank(table, col):
-                out[col] = None
-            else:
-                out[col] = val
-        return out
-
-    def _row_to_model(self, table: str, row: Dict[str, Any]) -> Any:
+    @staticmethod
+    def _row_to_model(table: str, row: Dict[str, Any]) -> Any:
         """Convert a row dictionary to a model instance.
 
         Args:
@@ -378,6 +465,9 @@ class Pseudonymizer:
         Returns:
             Number of rows copied.
         """
+        if self.cfg.num_workers and self.cfg.num_workers > 1:
+            return self._copy_table_parallel(table, self.cfg.num_workers)
+
         buf: List[Any] = []
         count = 0
         t0 = time.time()
@@ -413,7 +503,93 @@ class Pseudonymizer:
 
         return count
 
-    def _insert_columns_for_table(self, table: str) -> List[str]:
+    def _copy_table_parallel(self, table: str, num_workers: int) -> int:
+        """Same as _copy_table, but dispatches the transform step (hashing +
+        redaction) to a process pool. Fetch (the single _select_iter cursor)
+        and flush (the single _flush writer) stay exactly as they are in the
+        serial path -- only _transform_row/_row_to_model moves to worker
+        processes. Unlike ingestion's file-level parallelism, workers here
+        never touch either database at all, so there's no concurrent-
+        connection contention to worry about.
+
+        Runs a bounded pipeline (at most num_workers * 2 batches in flight)
+        rather than submitting the whole table upfront, so memory stays
+        bounded regardless of table size.
+
+        Args:
+            table: Name of the table to copy.
+            num_workers: Number of worker processes.
+
+        Returns:
+            Number of rows copied.
+        """
+        flush_buf: List[Any] = []
+        count = 0
+        t0 = time.time()
+        max_in_flight = num_workers * 2
+
+        def row_batches():
+            batch: List[Dict[str, Any]] = []
+            for row in self._select_iter(table):
+                batch.append(row)
+                if len(batch) >= self.cfg.transform_chunk_size:
+                    yield batch
+                    batch = []
+            if batch:
+                yield batch
+
+        batches_iter = row_batches()
+        in_flight: Dict[concurrent.futures.Future, None] = {}
+
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=num_workers,
+            initializer=_init_worker,
+            initargs=(self.cfg, self.policy),
+        ) as pool:
+
+            def submit_next() -> None:
+                batch = next(batches_iter, None)
+                if batch is not None:
+                    in_flight[pool.submit(_transform_batch_worker, table, batch)] = None
+
+            for _ in range(max_in_flight):
+                submit_next()
+
+            while in_flight:
+                done, _ = concurrent.futures.wait(
+                    in_flight, return_when=concurrent.futures.FIRST_COMPLETED
+                )
+                for fut in done:
+                    del in_flight[fut]
+                    model_objs = fut.result()
+                    flush_buf.extend(model_objs)
+                    count += len(model_objs)
+
+                    if len(flush_buf) >= self.cfg.chunk_rows:
+                        self._flush(table, flush_buf)
+                        elapsed = time.time() - t0
+                        rps = count / elapsed if elapsed > 0 else 0.0
+                        log.info(
+                            "Flushed %d rows into %s (%.0f rows/s, %d workers)",
+                            count, table, rps, num_workers,
+                        )
+                        flush_buf.clear()
+
+                    submit_next()
+
+        if flush_buf:
+            self._flush(table, flush_buf)
+            elapsed = time.time() - t0
+            rps = count / elapsed if elapsed > 0 else 0.0
+            log.info(
+                "Final flush %d rows into %s (%.0f rows/s, %d workers)",
+                count, table, rps, num_workers,
+            )
+
+        return count
+
+    @staticmethod
+    def _insert_columns_for_table(table: str) -> List[str]:
         """Get the list of columns to insert for a table.
 
         Args:

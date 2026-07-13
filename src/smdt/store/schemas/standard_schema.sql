@@ -148,16 +148,10 @@ CREATE TABLE IF NOT EXISTS dataset_meta (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Hypertables
-SELECT create_hypertable('communities','created_at', chunk_time_interval => INTERVAL '30 days', if_not_exists => TRUE);
-SELECT create_hypertable('accounts','created_at', chunk_time_interval => INTERVAL '30 days', if_not_exists => TRUE);
-SELECT create_hypertable('posts',   'created_at', chunk_time_interval => INTERVAL '7 days',  if_not_exists => TRUE);
-SELECT create_hypertable('entities','created_at', chunk_time_interval => INTERVAL '7 days',  if_not_exists => TRUE);
-SELECT create_hypertable('actions', 'created_at', chunk_time_interval => INTERVAL '7 days',  if_not_exists => TRUE);
-
--- Space partitions
-SELECT add_dimension('entities', 'entity_type', number_partitions => 6);
-SELECT add_dimension('actions',  'action_type', number_partitions => 8);
+-- Hypertables, space partitioning, and compression are NOT set up here --
+-- see smdt/store/schema_config.py's apply_hypertable_config(), applied
+-- programmatically after this file so chunk interval/partitioning/
+-- compression can be tuned per dataset instead of hardcoded per schema.
 
 -- Indexes
 -- communities
@@ -194,30 +188,9 @@ CREATE INDEX IF NOT EXISTS posts_created_at_brin   ON posts   USING BRIN (create
 CREATE INDEX IF NOT EXISTS actions_created_at_brin ON actions USING BRIN (created_at);
 CREATE INDEX IF NOT EXISTS entities_created_at_brin ON entities USING BRIN (created_at);
 
--- Compression (set & policy)
-ALTER TABLE communities SET (timescaledb.compress, timescaledb.compress_segmentby = 'community_id');
-ALTER TABLE accounts SET (timescaledb.compress, timescaledb.compress_segmentby = 'account_id');
-ALTER TABLE posts    SET (timescaledb.compress, timescaledb.compress_segmentby = 'account_id');
-ALTER TABLE entities SET (timescaledb.compress, timescaledb.compress_segmentby = 'entity_type, account_id');
-ALTER TABLE actions  SET (timescaledb.compress, timescaledb.compress_segmentby = 'action_type');
-
---- [MODIFIED FOR BULK-LOAD] ---
---- Pollicies are commented out.
---- I should add these once data is stored... 
-
--- SELECT add_compression_policy('accounts', INTERVAL '30 days');
--- SELECT add_compression_policy('posts',    INTERVAL '7 days');
--- SELECT add_compression_policy('entities', INTERVAL '7 days');
--- SELECT add_compression_policy('actions',  INTERVAL '7 days');
-
--- Reorder (scan locality)
--- This reorder policy now points to the correct, existing UNIQUE index
-SELECT add_reorder_policy('communities','communities_comm_created_uk');
-SELECT add_reorder_policy('accounts','accounts_acct_created_uk');
-SELECT add_reorder_policy('posts',   'posts_acct_time_idx');
-SELECT add_reorder_policy('actions', 'actions_type_time_idx');
-SELECT add_reorder_policy('entities','entities_acct_type_time_idx');
-
+-- Compression enablement + segmentby, compression policy scheduling, and
+-- the reorder (scan-locality) policy are also applied via
+-- apply_hypertable_config() -- see the note above the indexes section.
 
 -- Spatial indexes (critical for ST_DWithin/bbox queries)
 CREATE INDEX IF NOT EXISTS accounts_location_gix ON accounts USING GIST (location);

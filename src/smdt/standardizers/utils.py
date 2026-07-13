@@ -1,7 +1,15 @@
 from __future__ import annotations
+import logging
 import re
 from typing import List, Tuple, Dict, Any
 from urllib.parse import urlparse
+
+# urlextract logs "Invalid host '...'. If the host is valid report a bug."
+# at INFO level every time it correctly rejects a non-URL candidate
+# substring found inside free text -- expected, routine, not actionable,
+# and floods logs on real text at scale. The rejection itself is correct
+# and unaffected by this; only the noise is.
+logging.getLogger("urlextract").setLevel(logging.WARNING)
 
 # ---------------------------
 # Helpers for mentions, hashtags, emails

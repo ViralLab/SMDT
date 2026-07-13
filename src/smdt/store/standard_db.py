@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 
 from .models import MODEL_REGISTRY
 from ..config import DBConfig
+from .schema_config import SchemaConfig
 from .utils.db_sanitize import scrub_nul_deep, to_copy_text
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,49 @@ def _ident(name: str) -> sql.Identifier:
     return sql.Identifier(name)
 
 
+def apply_hypertable_config(conn: psycopg.Connection, schema_cfg: SchemaConfig) -> None:
+    """Apply chunk interval, space partitioning, and compression tuning for
+    each table in schema_cfg.tables. Idempotent -- every TimescaleDB call
+    here uses if_not_exists => TRUE, so this is safe to call again on an
+    already-configured table (e.g. a resumed/repeated init_schema() call).
+
+    Args:
+        conn: PostgreSQL connection (schema tables must already exist).
+        schema_cfg: Per-table chunk/partition/compression tuning.
+    """
+    with conn.cursor() as cur:
+        for table, cc in schema_cfg.tables.items():
+            cur.execute(
+                "SELECT create_hypertable(%s, %s, chunk_time_interval => %s, if_not_exists => TRUE)",
+                (table, cc.time_column, cc.chunk_time_interval),
+            )
+            if cc.space_partition_column and cc.space_partitions:
+                cur.execute(
+                    "SELECT add_dimension(%s, %s, number_partitions => %s, if_not_exists => TRUE)",
+                    (table, cc.space_partition_column, cc.space_partitions),
+                )
+            if cc.compress_segmentby:
+                # Reloption values aren't bind-parameterizable in ALTER TABLE
+                # SET (...) -- safe here since these come from internal
+                # config, not external input.
+                cur.execute(
+                    sql.SQL(
+                        "ALTER TABLE {} SET (timescaledb.compress, timescaledb.compress_segmentby = {})"
+                    ).format(_ident(table), sql.Literal(cc.compress_segmentby))
+                )
+                if cc.compress_after:
+                    cur.execute(
+                        "SELECT add_compression_policy(%s, %s, if_not_exists => TRUE)",
+                        (table, cc.compress_after),
+                    )
+            if cc.reorder_index:
+                cur.execute(
+                    "SELECT add_reorder_policy(%s, %s, if_not_exists => TRUE)",
+                    (table, cc.reorder_index),
+                )
+    conn.commit()
+
+
 # ---------------- Core class ----------------
 
 
@@ -68,7 +112,12 @@ class StandardDB:
     """
 
     def __init__(
-        self, db_name: str, cfg: Optional[DBConfig] = None, *, initialize: bool = False
+        self,
+        db_name: str,
+        cfg: Optional[DBConfig] = None,
+        *,
+        initialize: bool = False,
+        hypertable_config: Optional[SchemaConfig] = None,
     ):
         """Initialize StandardDB instance.
 
@@ -76,6 +125,11 @@ class StandardDB:
             db_name: Name of the database.
             cfg: Optional database configuration.
             initialize: If True, recreate database interactively.
+            hypertable_config: Per-table chunk/partition/compression tuning,
+                used only if initialize=True. Defaults to SchemaConfig()
+                (this project's own Election2023 Twitter benchmark tuning)
+                if not provided -- override for a dataset with a different
+                volume/shape.
 
         Raises:
             ValueError: If required DB credentials are missing.
@@ -96,7 +150,8 @@ class StandardDB:
 
         if initialize:
             self.recreate_db_interactive(
-                schema_sql_path=getattr(self.cfg, "standard_schema_path", "") or ""
+                schema_sql_path=getattr(self.cfg, "standard_schema_path", "") or "",
+                hypertable_config=hypertable_config,
             )
 
     # ---------------- Connections ----------------
@@ -235,11 +290,25 @@ class StandardDB:
 
     # ---------------- Schema application ----------------
 
-    def init_schema(self, schema_sql_path: Optional[str] = None) -> None:
-        """Apply SQL schema from file to the database.
+    def init_schema(
+        self,
+        schema_sql_path: Optional[str] = None,
+        hypertable_config: Optional[SchemaConfig] = None,
+    ) -> None:
+        """Apply SQL schema from file to the database, then apply hypertable
+        tuning (chunk interval, space partitioning, compression).
+
+        The SQL file defines table structure/indexes only -- chunk sizing,
+        space partitioning, and compression are applied separately via
+        hypertable_config so they can be tuned per dataset without editing
+        the schema file. Defaults reproduce this project's own Election2023
+        Twitter benchmark tuning if hypertable_config isn't provided; see
+        schema_config.py.
 
         Args:
             schema_sql_path: Path to SQL schema file.
+            hypertable_config: Per-table chunk/partition/compression tuning.
+                Defaults to SchemaConfig() if not provided.
 
         Raises:
             ValueError: If no schema path provided.
@@ -265,6 +334,8 @@ class StandardDB:
                 cur.execute(sql_text)
             conn.commit()
             log.info("Applied schema from %s to %s.", p, self.db_name)
+            apply_hypertable_config(conn, hypertable_config or SchemaConfig())
+            log.info("Applied hypertable config to %s.", self.db_name)
         except Exception as e:
             conn.rollback()
             log.error("Schema application failed: %s", e)
@@ -274,13 +345,17 @@ class StandardDB:
         finally:
             conn.close()
 
-    def recreate_db_interactive(self, schema_sql_path: str) -> None:
+    def recreate_db_interactive(
+        self, schema_sql_path: str, hypertable_config: Optional[SchemaConfig] = None
+    ) -> None:
         """Interactively recreate database and schema.
 
         Prompts user if database exists, offering to reset schema or abort.
 
         Args:
             schema_sql_path: Path to SQL schema file.
+            hypertable_config: Per-table chunk/partition/compression tuning.
+                Defaults to SchemaConfig() if not provided.
 
         Raises:
             SystemExit: If user aborts.
@@ -295,7 +370,7 @@ class StandardDB:
 
         if not exists:
             self.init_db()
-            self.init_schema(schema_sql_path)
+            self.init_schema(schema_sql_path, hypertable_config=hypertable_config)
             return
 
         while True:
@@ -314,7 +389,7 @@ class StandardDB:
                 break
 
         self.reset_schema()
-        self.init_schema(schema_sql_path)
+        self.init_schema(schema_sql_path, hypertable_config=hypertable_config)
 
     # ---------------- Bulk insert paths ----------------
 

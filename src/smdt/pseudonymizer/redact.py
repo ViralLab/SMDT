@@ -1,10 +1,18 @@
 """Redaction utility."""
 
 from __future__ import annotations
+import logging
 from dataclasses import dataclass
 from typing import Optional, Pattern, Callable
 from urllib.parse import urlparse
 from urlextract import URLExtract
+
+# urlextract logs "Invalid host '...'. If the host is valid report a bug."
+# at INFO level every time it correctly rejects a non-URL candidate
+# substring (e.g. "http://%92.97" found inside free text) -- expected,
+# routine, not actionable, and floods logs on real text at scale. The
+# rejection itself is correct and unaffected by this; only the noise is.
+logging.getLogger("urlextract").setLevel(logging.WARNING)
 
 try:
     import regex as re  # type: ignore
