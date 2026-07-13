@@ -15,6 +15,13 @@ wheels/
 node_modules/
 
   
+# Local-only standardizers -- not for GitHub
+src/smdt/standardizers/twitter/twitter_finland.py
+src/smdt/standardizers/twitter/twitter_io.py
+src/smdt/standardizers/bluesky/bluesky_efe.py
+src/smdt/standardizers/weibo/weibo.py
+src/smdt/standardizers/weibo/weibo_misbot.py
+
 # Generated docs
 site/api/**/*.md
 !site/api/README.md
