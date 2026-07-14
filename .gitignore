@@ -22,3 +22,6 @@ site/api/.generated-files.txt
 site/api/mkdocs.yml
 site/.vitepress/apiSidebar.mjs
 site/.vitepress/cache
+
+# Inspector auto-saved JSON snapshots (report_schemas default output)
+inspector_snapshots/

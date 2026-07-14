@@ -1,7 +1,11 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+import dataclasses
+import json
 import re
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from colorama import Fore, Style, init as colorama_init
 
@@ -35,11 +39,17 @@ class TableStat:
         columns: Dictionary mapping column names to ColStat objects.
         extra: Optional extra payload for table-specific stats
                (e.g., actions links per action_type).
+        is_estimated: True if these stats came from TABLESAMPLE-based
+            sampling (Inspector(sample_pct=...)) rather than an exact
+            full-table scan -- completeness/enum fractions are still
+            statistically representative, but absolute counts are
+            extrapolated, not exact.
     """
 
     est_rows: int
     columns: Dict[str, ColStat]
     extra: Optional[Dict[str, Any]] = None
+    is_estimated: bool = False
 
 
 # =============================================================
@@ -118,17 +128,48 @@ def psql_ident_full(schema: str, table: str) -> str:
 class Inspector:
     """Database schema/data inspector with completeness & enum stats."""
 
-    def __init__(self, db, schema: str, *, max_enum_items: int = 8):
+    def __init__(
+        self,
+        db,
+        schema: str,
+        *,
+        max_enum_items: int = 8,
+        sample_pct: Optional[float] = None,
+        time_window: Optional[Tuple[Any, Any]] = None,
+    ):
         """Initialize the Inspector.
 
         Args:
             db: Database connection or handler.
             schema: Schema name to inspect.
             max_enum_items: Maximum number of enum items to collect stats for.
+            sample_pct: If set, completeness/enum-distribution stats are
+                computed from a `TABLESAMPLE SYSTEM (sample_pct)` sample of
+                each table instead of an exact full-table scan, and row
+                counts use the database's own cached estimate
+                (pg_stat_user_tables/pg_class) instead of an exact COUNT(*).
+                Trades a small amount of accuracy for a large speedup on big
+                tables (measured: a full exact snapshot() of a 64M-row table
+                took 18.4s; sampling avoids scanning the whole table at all).
+                None (default) preserves the original exact, full-scan
+                behavior -- existing callers are unaffected.
+            time_window: Optional (start, end) restricting every query to
+                `created_at >= start AND created_at < end`, for tables that
+                have a `created_at` column (same convention as
+                `PseudonymizeConfig.time_window`). Combine with
+                `report_schemas([...])`'s existing multi-inspector
+                comparison to compare the *same* time slice across several
+                databases -- one Inspector per database, same time_window,
+                passed together. Chunk exclusion on the hypertable's time
+                dimension keeps this cheap even in exact mode, since a
+                narrow window only touches a handful of chunks regardless
+                of total table size.
         """
         self.db = db
         self.schema = schema
         self.max_enum_items = max_enum_items
+        self.sample_pct = sample_pct
+        self.time_window = time_window
 
     # ---------------------------------------------------------
     # Snapshot of schema stats
@@ -159,10 +200,40 @@ class Inspector:
                 )
                 tables = cur.fetchall()
 
+                # pg_stat_user_tables/reltuples are 0 for a TimescaleDB
+                # hypertable's parent relation -- all rows live in per-chunk
+                # child tables, so the parent itself is a shell with no
+                # tracked stats of its own (measured: entities showed
+                # n_live_tup=0 despite 64M real rows). TimescaleDB's own
+                # approximate_row_count() sums the per-chunk estimates
+                # correctly and also works on plain (non-hypertable) tables,
+                # so it's what sampled mode uses for its cheap row estimate.
+                # Checked once via pg_proc (a catalog lookup, not a function
+                # call) so a missing extension can't abort the transaction.
+                # Not useful when time_window is set -- approximate_row_count()
+                # counts the whole hypertable and can't be filtered, so a
+                # (possibly sampled) filtered COUNT(*) is the only number
+                # available either way; skip the extra query.
+                has_approx_row_count = False
+                if self.sample_pct is not None and self.time_window is None:
+                    cur.execute(
+                        "SELECT 1 FROM pg_proc WHERE proname = 'approximate_row_count'"
+                    )
+                    has_approx_row_count = cur.fetchone() is not None
+
                 out: Dict[str, TableStat] = {}
                 for tname, est_rows in tables:
                     if allow and _norm_tbl_name(tname) not in allow:
                         continue
+
+                    if has_approx_row_count:
+                        cur.execute(
+                            "SELECT approximate_row_count(%s)",
+                            (psql_ident_full(self.schema, tname),),
+                        )
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            est_rows = row[0]
 
                     # columns
                     cur.execute(
@@ -181,43 +252,72 @@ class Inspector:
                         (self.schema, tname),
                     )
                     cols = cur.fetchall()
+                    time_where, time_params = self._time_where(cols)
 
                     cstats: Dict[str, ColStat] = {}
-                    total = 0
+                    total: Optional[int] = None  # exact count, or sample count (denominator for fractions only)
                     extra: Optional[Dict[str, Any]] = None
+                    display_rows = est_rows or -1  # what we'll report as est_rows
 
                     if cols:
                         parts = ["COUNT(*) AS total"]
                         for col, *_ in cols:
                             alias = f"nn_{_norm_tbl_name(col)}"
                             parts.append(f"COUNT({psql_ident(col)}) AS {alias}")
-                        cur.execute(
-                            f"SELECT {', '.join(parts)} FROM {psql_ident_full(self.schema, tname)}"
-                        )
-                        row = cur.fetchone()
-                        total = int(row[0] or 0)
+                        select_sql = f"SELECT {', '.join(parts)} FROM {psql_ident_full(self.schema, tname)}"
+
+                        if self.sample_pct is None:
+                            cur.execute(select_sql + time_where, time_params)
+                            row = cur.fetchone()
+                            total = int(row[0] or 0)
+                            # Exact count is always authoritative -- except
+                            # approximate_row_count() can't apply time_where,
+                            # so a filtered count is the only number we have
+                            # either way; chunk exclusion keeps it cheap.
+                            display_rows = total
+                        else:
+                            row = None
+                            for pct in self._escalating_pcts(self.sample_pct):
+                                cur.execute(
+                                    f"{select_sql} TABLESAMPLE SYSTEM ({pct}){time_where}",
+                                    time_params,
+                                )
+                                row = cur.fetchone()
+                                if row and row[0]:
+                                    break
+                            total = int(row[0] or 0) if row else 0
+                            if self.time_window:
+                                # approximate_row_count() can't be filtered by
+                                # time_window, so there's no cheaper number
+                                # than the (sampled) filtered count itself.
+                                display_rows = total
 
                         for i, (col, typ, typtype, atttypid) in enumerate(
                             cols, start=1
                         ):
-                            nn = int(row[i] or 0)
-                            comp = None if total == 0 else (nn / total)
+                            nn = int(row[i] or 0) if row else 0
+                            comp = None if not total else (nn / total)
                             cstats[col] = ColStat(data_type=str(typ), completeness=comp)
 
                             # enum sub-stats
                             if self._is_enum_or_domain_enum(cur, typtype, atttypid):
                                 cstats[col].enum_counts = self._value_counts(
-                                    cur, tname, col, total, limit=self.max_enum_items
+                                    cur, tname, col, display_rows,
+                                    limit=self.max_enum_items,
+                                    time_where=time_where, time_params=time_params,
                                 )
 
                         # Table-specific extras: actions link stats per action_type
                         if _norm_tbl_name(tname) == "actions":
-                            extra = self._actions_link_stats(cur, tname)
+                            extra = self._actions_link_stats(
+                                cur, tname, time_where=time_where, time_params=time_params
+                            )
 
                     out[tname] = TableStat(
-                        est_rows=int(total if total > 0 else (est_rows or -1)),
+                        est_rows=int(display_rows if display_rows else -1),
                         columns=cstats,
                         extra=extra,
+                        is_estimated=self.sample_pct is not None,
                     )
 
                 if allow:
@@ -225,6 +325,24 @@ class Inspector:
                 return out
         finally:
             conn.close()
+
+    def snapshot_and_save(
+        self, path: Union[str, Path], *, only_tables: Optional[List[str]] = None
+    ) -> Dict[str, TableStat]:
+        """Convenience: snapshot() then save_snapshot() in one call, for
+        capturing a timestamped record of this database's stats to compare
+        against later (see load_snapshot() to read it back).
+
+        Args:
+            path: File path to write the JSON snapshot to.
+            only_tables: Optional table filter, same as snapshot().
+
+        Returns:
+            The same Dict[str, TableStat] snapshot() would return.
+        """
+        snap = self.snapshot(only_tables=only_tables)
+        save_snapshot(self, snap, path)
+        return snap
 
     # ---------------------------------------------------------
     # Helpers
@@ -253,6 +371,30 @@ class Inspector:
             return bool(row and row[0] == "e")
         return False
 
+    @staticmethod
+    def _escalating_pcts(start_pct: float) -> List[float]:
+        """1% -> 10% -> 100% (a full scan). TABLESAMPLE SYSTEM samples by
+        page, so a narrow starting percentage can come back completely
+        empty for a small table or a low-cardinality filter; only escalate
+        if the narrower one actually came back empty."""
+        pcts = [start_pct]
+        if start_pct < 10:
+            pcts.append(10.0)
+        if start_pct < 100:
+            pcts.append(100.0)
+        return pcts
+
+    def _time_where(self, cols) -> Tuple[str, List[Any]]:
+        """WHERE clause restricting to self.time_window, if set and this
+        table actually has a created_at column (same convention as
+        PseudonymizeConfig.time_window) -- empty string/params otherwise, a
+        no-op when appended to any query."""
+        if not self.time_window:
+            return "", []
+        if not any(col == "created_at" for col, *_ in cols):
+            return "", []
+        return " WHERE created_at >= %s AND created_at < %s", list(self.time_window)
+
     def _value_counts(
         self,
         cur,
@@ -261,6 +403,8 @@ class Inspector:
         total_rows: int,
         *,
         limit: int = 8,
+        time_where: str = "",
+        time_params: Optional[List[Any]] = None,
     ) -> List[Tuple[str, int, float]]:
         """Get value counts for a column.
 
@@ -268,35 +412,79 @@ class Inspector:
             cur: Database cursor.
             table: Table name.
             column: Column name.
-            total_rows: Total rows in the table.
+            total_rows: Total rows in the table (the cheap estimate when
+                self.sample_pct is set, exact otherwise -- used as the
+                scaling basis for estimated counts in sampled mode).
             limit: Maximum number of values to return.
+            time_where: Optional WHERE clause fragment from _time_where().
+            time_params: Params for time_where.
 
         Returns:
-            List of (value, count, percentage) tuples.
+            List of (value, count, percentage) tuples. In sampled mode,
+            `count` is extrapolated from the sample (percentage is the
+            direct, more reliable estimate); in exact mode both are exact.
         """
         if total_rows <= 0:
             return []
-        cur.execute(
-            f"""
-            SELECT {psql_ident(column)}::text AS val, COUNT(*) AS cnt
-            FROM {psql_ident_full(self.schema, table)}
-            GROUP BY 1 ORDER BY cnt DESC, val ASC
-            LIMIT %s
-            """,
-            (max(1, limit),),
+        time_params = time_params or []
+        base_sql = (
+            f"SELECT {psql_ident(column)}::text AS val, COUNT(*) AS cnt "
+            f"FROM {psql_ident_full(self.schema, table)}"
         )
-        rows = cur.fetchall()
-        top = [
-            (("NULL" if v is None else v), int(c), int(c) / total_rows) for v, c in rows
-        ]
-        shown = sum(c for _v, c, _p in top)
-        if shown < total_rows:
-            other = total_rows - shown
-            top.append(("other", other, other / total_rows))
+        group_sql = " GROUP BY 1 ORDER BY cnt DESC, val ASC LIMIT %s"
+
+        if self.sample_pct is None:
+            cur.execute(base_sql + time_where + group_sql, (*time_params, max(1, limit)))
+            rows = cur.fetchall()
+            top = [
+                (("NULL" if v is None else v), int(c), int(c) / total_rows)
+                for v, c in rows
+            ]
+            shown = sum(c for _v, c, _p in top)
+            if shown < total_rows:
+                other = total_rows - shown
+                top.append(("other", other, other / total_rows))
+            return top
+
+        # Sampled mode: percentages come directly from the sample (a
+        # reliable estimate); displayed counts are extrapolated onto
+        # total_rows (the cheap row-count estimate) so they read
+        # consistently with the rest of the report, not as tiny raw sample
+        # counts next to a big percentage.
+        rows: List[Tuple[Optional[str], int]] = []
+        for pct in self._escalating_pcts(self.sample_pct):
+            cur.execute(
+                f"{base_sql} TABLESAMPLE SYSTEM ({pct}){time_where}{group_sql}",
+                (*time_params, max(1, limit)),
+            )
+            rows = cur.fetchall()
+            if rows:
+                break
+        if not rows:
+            return []
+
+        sample_total = sum(int(c) for _v, c in rows)
+        if sample_total == 0:
+            return []
+        top = []
+        for v, c in rows:
+            frac = int(c) / sample_total
+            top.append((("NULL" if v is None else v), round(frac * total_rows), frac))
+        shown_frac = sum(p for _v, _c, p in top)
+        if shown_frac < 1.0:
+            other_frac = 1.0 - shown_frac
+            top.append(("other", round(other_frac * total_rows), other_frac))
         return top
 
     # -------- actions-specific helper --------------------------------
-    def _actions_link_stats(self, cur, table: str) -> Dict[str, Any]:
+    def _actions_link_stats(
+        self,
+        cur,
+        table: str,
+        *,
+        time_where: str = "",
+        time_params: Optional[List[Any]] = None,
+    ) -> Dict[str, Any]:
         """Compute per-action_type completeness statistics for the actions table.
 
         Computes completeness for: target_account_id, target_post_id,
@@ -306,12 +494,20 @@ class Inspector:
         Args:
             cur: Database cursor.
             table: Table name.
+            time_where: Optional WHERE clause fragment from _time_where().
+            time_params: Params for time_where.
 
         Returns:
-            Dictionary containing 'actions_links_per_type' list.
+            Dictionary containing 'actions_links_per_type' list. In sampled
+            mode (self.sample_pct set), each group's `nn`/`total` counts are
+            the raw counts *from the sample* (not extrapolated -- there's no
+            cheap per-action_type row-count estimate to scale onto, unlike
+            the table-level stats above), so they'll read smaller than the
+            rest of the report; `pct` is still a reliable estimate either
+            way, since nn and total both come from the same sampled rows.
         """
-        cur.execute(
-            f"""
+        time_params = time_params or []
+        base_sql = f"""
             SELECT
                 action_type::text AS action_type,
                 COUNT(*) AS total,
@@ -322,11 +518,22 @@ class Inspector:
                 COUNT(originator_community_id) AS nn_originator_community_id,
                 COUNT(target_community_id)    AS nn_target_community_id
             FROM {psql_ident_full(self.schema, table)}
-            GROUP BY 1
-            ORDER BY 1
-            """
-        )
-        rows = cur.fetchall()
+        """
+        group_sql = " GROUP BY 1 ORDER BY 1"
+
+        if self.sample_pct is None:
+            cur.execute(base_sql + time_where + group_sql, time_params)
+            rows = cur.fetchall()
+        else:
+            rows = []
+            for pct in self._escalating_pcts(self.sample_pct):
+                cur.execute(
+                    f"{base_sql} TABLESAMPLE SYSTEM ({pct}){time_where}{group_sql}",
+                    time_params,
+                )
+                rows = cur.fetchall()
+                if rows:
+                    break
         per_type: List[Dict[str, Any]] = []
         for (
             action_type,
@@ -377,6 +584,120 @@ class Inspector:
 
 
 # =============================================================
+# Structured output (save/load snapshots as JSON)
+# =============================================================
+
+
+def snapshot_to_dict(
+    inspector: "Inspector", snap: Dict[str, TableStat]
+) -> Dict[str, Any]:
+    """Serialize a snapshot (as returned by Inspector.snapshot()) into a
+    JSON-serializable dict, alongside the metadata needed to make sense of
+    it later: when it was taken, which database/schema, and whether it was
+    exact or sampled. This is the envelope save_snapshot()/load_snapshot()
+    round-trip; report_schemas() still works only on live Inspector
+    instances, this is for saving results and comparing across runs.
+
+    Args:
+        inspector: The Inspector that produced `snap` (for its metadata).
+        snap: A snapshot dict, e.g. `inspector.snapshot()`.
+
+    Returns:
+        A JSON-serializable dict: {timestamp, db_name, schema, sample_pct,
+        time_window, tables: {table_name: {...TableStat fields...}}}.
+    """
+    return {
+        "timestamp": time.time(),
+        "db_name": getattr(inspector.db, "db_name", None),
+        "schema": inspector.schema,
+        "sample_pct": inspector.sample_pct,
+        "time_window": (
+            [str(t) for t in inspector.time_window] if inspector.time_window else None
+        ),
+        "tables": {
+            tname: dataclasses.asdict(tstat) for tname, tstat in snap.items()
+        },
+    }
+
+
+def save_snapshot(
+    inspector: "Inspector", snap: Dict[str, TableStat], path: Union[str, Path]
+) -> None:
+    """Save a snapshot to `path` as JSON. See snapshot_to_dict() for the
+    envelope shape.
+
+    Args:
+        inspector: The Inspector that produced `snap` (for its metadata).
+        snap: A snapshot dict, e.g. `inspector.snapshot()`.
+        path: File path to write to (parent directory must already exist).
+    """
+    data = snapshot_to_dict(inspector, snap)
+    Path(path).write_text(json.dumps(data, indent=2, default=str))
+
+
+def _tablestat_from_dict(d: Dict[str, Any]) -> TableStat:
+    columns = {
+        cname: ColStat(
+            data_type=cd["data_type"],
+            completeness=cd["completeness"],
+            enum_counts=(
+                [tuple(item) for item in cd["enum_counts"]]
+                if cd.get("enum_counts")
+                else None
+            ),
+        )
+        for cname, cd in d.get("columns", {}).items()
+    }
+    return TableStat(
+        est_rows=d["est_rows"],
+        columns=columns,
+        extra=d.get("extra"),
+        is_estimated=d.get("is_estimated", False),
+    )
+
+
+def load_snapshot(
+    path: Union[str, Path]
+) -> Tuple[Dict[str, Any], Dict[str, TableStat]]:
+    """Load a snapshot previously written by save_snapshot().
+
+    Args:
+        path: File path to read.
+
+    Returns:
+        (metadata, tables) -- metadata is the envelope's timestamp/db_name/
+        schema/sample_pct/time_window; tables is a Dict[str, TableStat],
+        reconstructed so it's usable exactly like a live
+        `Inspector.snapshot()` result (e.g. `tables["posts"].est_rows`).
+    """
+    raw = json.loads(Path(path).read_text())
+    tables = {
+        tname: _tablestat_from_dict(tdict)
+        for tname, tdict in raw.get("tables", {}).items()
+    }
+    metadata = {k: v for k, v in raw.items() if k != "tables"}
+    return metadata, tables
+
+
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _default_snapshot_filename(inspector: "Inspector") -> str:
+    """Build a filesystem-safe file name that corresponds to one inspector,
+    for report_schemas()'s default auto-save. Encodes enough of the
+    inspector's identity (db, schema, time_window, sample_pct) that two
+    different inspectors don't collide on the same file."""
+    db_name = getattr(inspector.db, "db_name", None) or "unknown_db"
+    parts = [str(db_name), inspector.schema]
+    if inspector.time_window:
+        parts.append(f"{inspector.time_window[0]}_{inspector.time_window[1]}")
+    if inspector.sample_pct is not None:
+        parts.append(f"sampled{inspector.sample_pct}pct")
+    safe = _UNSAFE_FILENAME_CHARS.sub("_", "__".join(parts))
+    return f"{safe}.json"
+
+
+# =============================================================
 # Reporting
 # =============================================================
 
@@ -386,6 +707,8 @@ def report_schemas(
     *,
     only_tables: Optional[List[str]] = None,
     show_counts: bool = True,
+    save: bool = True,
+    save_dir: Union[str, Path] = "inspector_snapshots",
 ) -> None:
     """Generate and print a schema report.
 
@@ -393,15 +716,31 @@ def report_schemas(
         inspectors: List of Inspector instances.
         only_tables: Optional list of tables to include.
         show_counts: Whether to show counts in enum stats (completeness always shows nn/total).
+        save: If True (the default), also write each inspector's snapshot to
+            a JSON file under `save_dir` -- one file per inspector, named
+            after its db/schema/time_window/sample_pct (see
+            _default_snapshot_filename()). Set to False to only print.
+        save_dir: Directory the JSON snapshots are written to (created if
+            missing). Ignored if save=False.
     """
     allow = {_norm_tbl_name(t) for t in only_tables} if only_tables else None
 
     # Collect snapshots and labels
     snaps: List[Dict[str, TableStat]] = []
     labels: List[str] = []
+    if save:
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
     for ins in inspectors:
-        snaps.append(ins.snapshot(only_tables=only_tables))
-        labels.append(f"{ins.db.db_name}:{ins.schema}")
+        snap = ins.snapshot(only_tables=only_tables)
+        snaps.append(snap)
+        label = f"{ins.db.db_name}:{ins.schema}"
+        if ins.time_window:
+            label += f" [{ins.time_window[0]}..{ins.time_window[1]}]"
+        labels.append(label)
+        if save:
+            out_path = Path(save_dir) / _default_snapshot_filename(ins)
+            save_snapshot(ins, snap, out_path)
+            print(_dim(f"[inspector] Saved snapshot: {out_path}"))
 
     # -------- Tables to show (preserve user order if provided) --------
     norm_to_actual: Dict[str, str] = {}
@@ -480,7 +819,11 @@ def report_schemas(
 
     for tname in all_tables:
         print()
-        print(f"{Style.BRIGHT}TABLE{Style.RESET_ALL} {_color_table(tname)}")
+        any_estimated = any(
+            snap.get(tname) and snap[tname].is_estimated for snap in snaps
+        )
+        suffix = _dim(" (sampled estimate)") if any_estimated else ""
+        print(f"{Style.BRIGHT}TABLE{Style.RESET_ALL} {_color_table(tname)}{suffix}")
 
         # Union of columns across all inspectors for this table
         all_cols = sorted(
