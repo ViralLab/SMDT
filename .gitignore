@@ -32,3 +32,9 @@ site/.vitepress/cache
 
 # Inspector auto-saved JSON snapshots (report_schemas default output)
 inspector_snapshots/
+
+# Benchmark raw Twitter data -- not for GitHub (real Twitter data, ~6GB)
+benchmark_scripts/data/
+
+# Pseudonymization secrets -- random per-run pepper, never commit key material
+benchmark_scripts/logs/*pepper*.bin

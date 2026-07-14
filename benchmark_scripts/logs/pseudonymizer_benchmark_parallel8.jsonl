@@ -1,0 +1,9 @@
+{"timestamp": 1783924782.242224, "table": "communities", "num_workers": 8, "status": "done", "rows": 0, "elapsed_s": 0.06759469211101532, "rows_per_sec": 0.0}
+{"timestamp": 1783924877.1276698, "table": "accounts", "num_workers": 8, "status": "done", "rows": 815010, "elapsed_s": 94.70581510663033, "rows_per_sec": 8605.701762688714}
+{"timestamp": 1783928008.2174518, "table": "posts", "num_workers": 8, "status": "done", "rows": 10739789, "elapsed_s": 3130.8741762042046, "rows_per_sec": 3430.284449508175}
+{"timestamp": 1783933324.0449452, "table": "entities", "num_workers": 8, "status": "done", "rows": 63985430, "elapsed_s": 5315.665782526135, "rows_per_sec": 12037.143157181818}
+{"timestamp": 1783934603.1206431, "table": "actions", "num_workers": 8, "status": "done", "rows": 10492588, "elapsed_s": 1278.8082469552755, "rows_per_sec": 8204.973673716826}
+{"timestamp": 1783934603.3553898, "table": "post_enrichments", "num_workers": 8, "status": "done", "rows": 0, "elapsed_s": 0.05478070676326752, "rows_per_sec": 0.0}
+{"timestamp": 1783934603.6244721, "table": "account_enrichments", "num_workers": 8, "status": "done", "rows": 0, "elapsed_s": 0.04900713264942169, "rows_per_sec": 0.0}
+{"timestamp": 1783934604.3369453, "table": "dataset_meta", "num_workers": 8, "status": "done", "rows": 1, "elapsed_s": 0.531426802277565, "rows_per_sec": 1.8817266944652493}
+{"timestamp": 1783934611.9080484, "event": "summary", "num_workers": 8, "db_size_bytes": 43286127395, "row_counts": {"communities": 0, "accounts": 815010, "posts": 10739789, "entities": 63985430, "actions": 10492588, "post_enrichments": 0, "account_enrichments": 0, "dataset_meta": 1}}
