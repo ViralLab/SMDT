@@ -4,14 +4,18 @@ compression) for the standard/pseudonymized schemas.
 The schema SQL files (schemas/standard_schema.sql,
 schemas/pseudo_std_schema.sql) define table structure and indexes, which
 are the same regardless of dataset. Chunk sizing, space partitioning, and
-compression are a different kind of decision -- they were tuned for the
-Election2023 Twitter dataset used in this project's own benchmarks (see
-hpc.md / query_benchmarking.md for the measurements behind these defaults),
-and a different dataset (different volume, different natural partitioning
-dimension) may want different values. This module makes those specific
-knobs configurable via SchemaConfig, applied programmatically after the
-static schema SQL via apply_hypertable_config(), instead of being hardcoded
-in the SQL files.
+compression are a different kind of decision -- the defaults below
+reproduce this project's pre-existing schema values (originally hardcoded
+in those SQL files), which is a reasonable starting point for a
+Twitter-scale dataset but not something a different dataset (different
+volume, different natural partitioning dimension) should be locked into.
+See query_benchmarking.md for real measured evidence of what this chunking
+design costs for non-time-filtered point lookups (why configurability
+matters here) -- it doesn't claim these specific defaults are optimal, just
+that they're the project's known-working starting point. This module makes
+those specific knobs configurable via SchemaConfig, applied programmatically
+after the static schema SQL via apply_hypertable_config(), instead of being
+hardcoded in the SQL files.
 """
 
 from __future__ import annotations
@@ -100,9 +104,10 @@ def _default_chunk_configs() -> Dict[str, ChunkConfig]:
 @dataclass(frozen=True)
 class SchemaConfig:
     """Hypertable tuning for all of the standard/pseudonymized schema's
-    hypertables. Defaults reproduce this project's own Election2023 Twitter
-    benchmark tuning -- override per table for a dataset with a different
-    volume/shape, e.g.:
+    hypertables. Defaults reproduce this project's pre-existing schema
+    values (a known-working starting point for this Election2023 Twitter
+    dataset, not a claim that they're optimal) -- override per table for a
+    dataset with a different volume/shape, e.g.:
 
         cfg = SchemaConfig(tables={
             **SchemaConfig().tables,
