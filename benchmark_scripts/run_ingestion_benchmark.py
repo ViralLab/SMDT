@@ -45,14 +45,18 @@ import logging
 import os
 import resource
 import sys
+import threading
 import time
 from pathlib import Path
+
+import psutil
 
 from config import (
     BATCH_SIZE,
     CHUNK_SIZE,
     DATA_DIR,
     LOGS_DIR,
+    MEMORY_SAMPLE_INTERVAL_SECONDS,
     MODEL_TABLES,
     ON_CONFLICT,
     CHECKPOINTS,
@@ -105,26 +109,80 @@ def append_result(results_path: Path, result: dict) -> None:
         f.write(json.dumps(result) + "\n")
 
 
-def current_rss_kb() -> int | None:
-    """Instantaneous current RSS in KB, unlike resource.getrusage()'s
-    ru_maxrss which is a monotonic high-water mark and can never show
-    memory decreasing after a buffer flush frees it. Linux-only (/proc)."""
+_this_process = psutil.Process()
+_memory_write_lock = threading.Lock()
+
+
+def total_rss_kb() -> int | None:
+    """RSS in KB summed across this process AND all of its live child
+    processes, recursively.
+
+    A self-only /proc/self/status read (the previous implementation) is
+    correct for num_workers=1, where the one benchmark process does all the
+    standardizing/buffering/flushing itself. But num_workers>1 dispatches
+    each file to a separate worker process via ProcessPoolExecutor (see
+    pipeline.py's _run_parallel) -- the actual memory-heavy work happens
+    inside those workers, each in its own address space, and the main
+    process just dispatches futures and aggregates small per-file counters.
+    A self-only reading therefore only measures an idle dispatcher and
+    made parallel ingestion look like it used less memory, when the real
+    total (main + all workers) was invisible to the measurement entirely."""
     try:
-        with open("/proc/self/status", "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("VmRSS:"):
-                    return int(line.split()[1])  # kB
+        total = _this_process.memory_info().rss
+        for child in _this_process.children(recursive=True):
+            try:
+                total += child.memory_info().rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return total // 1024  # bytes -> KB
     except Exception:
         return None
-    return None
 
 
-def append_memory_sample(memory_path: Path, **fields) -> None:
-    rss_kb = current_rss_kb()
+def append_memory_sample(memory_path: Path, *, stage_peak: dict | None = None, **fields) -> None:
+    rss_kb = total_rss_kb()
     if rss_kb is None:
         return
-    with memory_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"timestamp": time.time(), "rss_kb": rss_kb, **fields}) + "\n")
+    with _memory_write_lock:
+        if stage_peak is not None:
+            stage_peak["value"] = max(stage_peak.get("value", 0), rss_kb)
+        with memory_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"timestamp": time.time(), "rss_kb": rss_kb, **fields}) + "\n")
+
+
+class PeriodicMemorySampler:
+    """Samples total_rss_kb() on a wall-clock timer in a background thread,
+    independent of pipeline progress events -- so num_workers=1 and >1 get
+    directly comparable, continuous memory time series. Event-driven
+    sampling alone (at flush/file_end) only fires in the main process when
+    a worker's whole file completes, which is both too coarse and (before
+    total_rss_kb()) blind to concurrent worker memory."""
+
+    def __init__(self, memory_path: Path, checkpoint: int, t0: float, stage_peak: dict, interval: float):
+        self._memory_path = memory_path
+        self._checkpoint = checkpoint
+        self._t0 = t0
+        self._stage_peak = stage_peak
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            append_memory_sample(
+                self._memory_path,
+                stage_peak=self._stage_peak,
+                checkpoint=self._checkpoint,
+                event="periodic",
+                elapsed_since_stage_start=time.perf_counter() - self._t0,
+            )
 
 
 def collect_db_metrics(db: StandardDB) -> dict:
@@ -197,12 +255,14 @@ def run_checkpoint(
     file_end_events: list[dict] = []
     done_info: dict = {}
     t0 = time.perf_counter()
+    stage_peak: dict = {}  # max total_rss_kb() seen this stage, across all sample sources
 
     def progress(event, info):
         if event == "flush":
             flush_events.append(dict(info))
             append_memory_sample(
                 memory_path,
+                stage_peak=stage_peak,
                 checkpoint=checkpoint,
                 event=event,
                 elapsed_since_stage_start=time.perf_counter() - t0,
@@ -213,6 +273,7 @@ def run_checkpoint(
             file_end_events.append(dict(info))
             append_memory_sample(
                 memory_path,
+                stage_peak=stage_peak,
                 checkpoint=checkpoint,
                 event=event,
                 elapsed_since_stage_start=time.perf_counter() - t0,
@@ -225,29 +286,44 @@ def run_checkpoint(
 
     load_before = os.getloadavg()
     append_memory_sample(
-        memory_path, checkpoint=checkpoint, event="stage_start", elapsed_since_stage_start=0.0
+        memory_path, stage_peak=stage_peak, checkpoint=checkpoint,
+        event="stage_start", elapsed_since_stage_start=0.0,
     )
 
-    run_pipeline(
-        plan,
-        db,
-        TwitterV1Standardizer(),
-        config=PipelineConfig(
-            batch_size=BATCH_SIZE,
-            chunk_size=CHUNK_SIZE,
-            on_conflict=ON_CONFLICT,
-            checkpoint_file=str(checkpoint_path),
-            reset_checkpoint=is_first_ever,
-            progress=progress,
-            num_workers=num_workers,
-        ),
+    # Wall-clock periodic sampling runs alongside the event-driven samples
+    # above -- it's what actually captures worker-process memory under
+    # num_workers>1, where flush/file_end only fire once per whole file.
+    sampler = PeriodicMemorySampler(
+        memory_path, checkpoint, t0, stage_peak, MEMORY_SAMPLE_INTERVAL_SECONDS
     )
+    sampler.start()
+    try:
+        run_pipeline(
+            plan,
+            db,
+            TwitterV1Standardizer(),
+            config=PipelineConfig(
+                batch_size=BATCH_SIZE,
+                chunk_size=CHUNK_SIZE,
+                on_conflict=ON_CONFLICT,
+                checkpoint_file=str(checkpoint_path),
+                reset_checkpoint=is_first_ever,
+                progress=progress,
+                num_workers=num_workers,
+            ),
+        )
+    finally:
+        sampler.stop()
 
     elapsed = time.perf_counter() - t0
     load_after = os.getloadavg()
+    # Self-only high-water mark since process start -- kept for continuity,
+    # but under num_workers>1 this reflects only the (mostly idle) dispatcher
+    # process, NOT worker memory. Use peak_total_rss_kb_this_stage instead.
     peak_rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     append_memory_sample(
-        memory_path, checkpoint=checkpoint, event="stage_end", elapsed_since_stage_start=elapsed
+        memory_path, stage_peak=stage_peak, checkpoint=checkpoint,
+        event="stage_end", elapsed_since_stage_start=elapsed,
     )
 
     records_this_stage = done_info.get("records", 0)
@@ -266,8 +342,14 @@ def run_checkpoint(
         "load_avg_after": list(load_after),
         # High-water mark since this *process* started, not just this
         # stage -- meaningful because the whole benchmark runs as one
-        # continuous process; see the driver's module docstring.
+        # continuous process; see the driver's module docstring. Self-only:
+        # under num_workers>1 this does NOT include worker-process memory.
         "peak_rss_kb_since_process_start": peak_rss_kb,
+        # Correct total-memory peak for THIS stage: self + all live child
+        # (worker) processes, from the periodic + event-driven samples
+        # written to memory_path during this stage. Comparable across
+        # num_workers values, unlike the self-only field above.
+        "peak_total_rss_kb_this_stage": stage_peak.get("value"),
         "pipeline_done_counters": done_info,
         "flush_events": flush_events,
         "file_end_events": file_end_events,

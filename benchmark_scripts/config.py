@@ -109,6 +109,14 @@ def pseudo_pepper_file(num_workers: int) -> Path:
     return LOGS_DIR / f"pseudonymizer_pepper_{mode_name(num_workers)}.bin"
 
 
+# ---- Memory sampling ----
+# Wall-clock interval for the background total-RSS sampler in
+# run_ingestion_benchmark.py -- independent of pipeline progress events so
+# num_workers=1 and num_workers>1 get comparable, continuous time series
+# (event-driven sampling alone only fires once per file completion under
+# parallel dispatch, which is too coarse and main-process-only).
+MEMORY_SAMPLE_INTERVAL_SECONDS = 2.0
+
 # ---- Query-speed / indexing-strategy benchmark ----
 # See query_benchmark.py. Runs against whatever data volume already exists in
 # that mode's DB (by default the final state of the ingestion benchmark) --
