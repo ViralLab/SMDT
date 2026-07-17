@@ -1,34 +1,39 @@
-# SMDT — Social Media Data Toolkit
+# SMDT: Social Media Data Toolkit
 
 ![diagram](assets/toolkit_diagram.png?raw=true)
 
-**SMDT** is a lightweight toolkit designed for ingesting, normalizing, enriching, and analyzing social-media data. It prioritizes streaming-friendly processing for large datasets, providing builders, utilities, and NLP hooks to transform raw exports (JSONL/CSV) into edge lists and NetworkX graphs.
+**SMDT** is an open-source toolkit for ingesting, normalizing, enriching, pseudonymizing, and analyzing social media data across **11+ platforms** (Twitter/X, Bluesky, TruthSocial, Reddit, Telegram, Gab, Koo, Parler, Voat, Weibo, and more). It converts heterogeneous raw exports into a single unified relational schema backed by Postgres, TimescaleDB, and PostGIS, then provides enrichment, network building, and cross-platform querying on top.
 
-The goal is to provide a flexible, consistent data model to enable reproducible data analysis across different social platforms.
+📖 **Documentation:** [varollab.com/SMDT](https://varollab.com/SMDT) &nbsp;|&nbsp; 📄 **Paper:** *Social Media Data Toolkit: Standardization and Anonymization of Social Network Datasets* (Najafi, Iannucci, Kivelä, Varol)
 
 ## Table of Contents
 - [Features](#features)
-- [Prerequisites & Database Setup](#prerequisites--database-setup)
-- [Installation & Quickstart](#installation--quickstart)
+- [Prerequisites and Database Setup](#prerequisites-and-database-setup)
+- [Installation and Quickstart](#installation-and-quickstart)
 - [Usage](#usage)
     - [1. Standardize Raw Exports](#1-standardize-raw-exports)
-    - [2. Inspect Data Quality](#2-inspect-data-quality)
-    - [3. Build Networks](#3-build-networks)
-    - [4. Enrich Data](#4-enrich-data)
-    - [5. Cross-Platform Analysis](#5-cross-platform-analysis)
+    - [2. Pseudonymize and Protect Data](#2-pseudonymize-and-protect-data)
+    - [3. Inspect Data Quality](#3-inspect-data-quality)
+    - [4. Build Networks](#4-build-networks)
+    - [5. Enrich Data](#5-enrich-data)
+    - [6. Cross-Platform Analysis](#6-cross-platform-analysis)
+    - [7. GDPR Erasure](#7-gdpr-erasure)
 - [Project Structure](#project-structure)
 - [Data Model](#data-model)
-- [Development & Testing](#development--testing)
+- [Performance](#performance)
+- [Development and Testing](#development-and-testing)
 - [Citation](#citation)
+- [License](#license)
 
 ## Features
 
-* **Ingest & Standardize:** Convert raw platform exports (Twitter/X, Bluesky, TruthSocial) into normalized SQL tables (`Communities`, `Accounts`, `Posts`, `Actions`, `Entities`).
-* **Pseudonymize & Redact:** Remove or pseudonymize sensitive fields using policy-driven helpers before sharing datasets.
-* **Enrich & Label:** Apply computed features (language detection, toxicity scores, embeddings) via a local or server-backed enrichment framework.
-* **Build Networks:** Generate edge lists (User–User, Entity–Cooccurrence) and bipartite graphs compatible with NetworkX and Gephi.
-* **Scale:** Designed for streaming; handles datasets that do not fit in memory using incremental builders and Parquet exports.
-* **Cross-Platform Analysis:** Attach multiple per-dataset databases into one DuckDB connection with `MultiStore` and join/union across them with plain SQL, since every dataset shares the same standardized schema.
+* **Ingest and Standardize:** Convert raw platform exports from 11+ platforms (15+ standardizer variants) into a unified relational schema with five core tables: `Communities`, `Accounts`, `Posts`, `Actions`, `Entities`.
+* **Pseudonymize and Redact:** Three-layer configurable privacy pipeline: column-level hashing, regex-based redaction of mentions/emails/URLs, and optional Presidio-based PII detection for phone numbers, credit cards, and personal names.
+* **GDPR Erasure:** Forward-only identity resolution. Hard-delete or scrub an individual's data across source and pseudonymized databases without orphaning other users' interactions.
+* **Enrich and Label:** Apply computed features (language detection, toxicity, sentiment, embeddings, LLM labeling) via local models or hosted APIs, with a built-in privacy preprocessor that redacts PII before external transmission.
+* **Build Networks:** Generate user interaction, entity co-occurrence, bipartite, and coaction graphs. Temporal window support for studying network evolution.
+* **Cross-Platform Analysis:** Attach multiple per-dataset databases into one DuckDB connection with `MultiStore` and join or union across them with plain SQL.
+* **Scale:** Benchmarked to 10M input records (86M DB rows, 44.6 GB). Single-threaded throughput of ~360 rec/s; up to 5.9x speedup with 8 parallel workers. Query latency from 0.33 ms (indexed point lookup) to 2,623 ms (unindexed sequential scan baseline).
 
 
 ## Prerequisites & Database Setup
@@ -203,39 +208,69 @@ This project uses `uv` for fast Python package management. For detailed instruct
 
 ### 1. Standardize Raw Exports
 
-Convert raw JSONL data into normalized objects (Posts, Accounts, Entities, Actions).
- 
+Convert raw JSONL data using the pipeline API:
+
 ```python
-from smdt.standardizers.twitter.twitter_v2 import TwitterV2Standardizer
-from smdt.io.readers.jsonl import JSONLReader
+from smdt.io.readers import discover
+from smdt.ingest.plan import plan_directories
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.store.standard_db import StandardDB
+from smdt.standardizers import TwitterV2Standardizer
+from smdt.store.models import Accounts, Posts, Entities
 
-standardizer = TwitterV2Standardizer()
+discover()
+plan = plan_directories(roots=["/data/twitter/"], include=("*twitter*.jsonl",))
+db = StandardDB("my_dataset", initialize=True)
 
-# Stream through a JSONL export
-for record in JSONLReader("data/tweets.jsonl"):
-    for model in standardizer.standardize(record):
-        # model is an instance of Posts, Accounts, Entities, or Actions
-        print(model)
+run_pipeline(
+    plan, db, TwitterV2Standardizer(),
+    config=PipelineConfig(
+        batch_size=100_000,
+        on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+    ),
+)
 ```
 
-### 2. Inspect Data Quality
+See [`site/recipes/standardizing-twitter-v2.md`](site/recipes/standardizing-twitter-v2.md) for a complete walkthrough.
+
+### 2. Pseudonymize and Protect Data
+
+Transform a source database into a pseudonymized destination with configurable per-column policies:
+
+```python
+from smdt.pseudonymizer import Pseudonymizer, PseudonymizeConfig, Algorithm, DEFAULT_POLICY
+from smdt.config import PseudonymizationVariables
+
+pseudo_vars = PseudonymizationVariables()
+
+cfg = PseudonymizeConfig(
+    src_db_name="my_dataset",
+    dst_db_name="my_dataset_pseudo",
+    pepper=pseudo_vars.pepper,
+    algorithm=Algorithm.SHA256,
+    ask_reinit=True,
+    chunk_rows=5_000,
+)
+
+Pseudonymizer(cfg, DEFAULT_POLICY).run()
+```
+
+See [`site/recipes/pseudonymization.md`](site/recipes/pseudonymization.md) for PII detection with Presidio, parallel processing, and custom policies.
+
+### 3. Inspect Data Quality
 
 Check the completeness and schema distributions of your normalized tables.
 
 ```python
-from smdt.config import DBConfig
 from smdt.store.standard_db import StandardDB
 from smdt.inspector.inspector import Inspector, report_schemas
 
-cfg = DBConfig() # reads DB_* env vars
-db = StandardDB(db_name=cfg.default_dbname or 'mydb', cfg=cfg)
-ins = Inspector(db, schema=getattr(cfg, 'owner', 'public'))
-
+db = StandardDB("my_dataset", initialize=False)
+ins = Inspector(db)
 report_schemas([ins], only_tables=['posts', 'actions', 'accounts'])
-
 ```
 
-### 3. Build Networks
+### 4. Build Networks
 
 Generate interaction graphs for analysis.
 
@@ -256,7 +291,7 @@ print(result.edges.head())
 result.edges.to_parquet("edges.parquet")
 ```
 
-### 4. Enrich Data
+### 5. Enrich Data
 
 Apply computed features (language detection, toxicity, embeddings, LLM labels, ...) and store results in `post_enrichments`/`account_enrichments`. Local enrichers run entirely in-process:
 
@@ -288,7 +323,7 @@ run_enricher("text_generation", db=db, config=config)
 
 See [`site/recipes/enrichment/nlp.md`](site/recipes/enrichment/nlp.md) for one full example per provider (OpenAI, Anthropic, Gemini, Ollama, Hugging Face).
 
-### 5. Cross-Platform Analysis
+### 6. Cross-Platform Analysis
 
 Each dataset lives in its own database, but they all share the same schema. `MultiStore` attaches multiple datasets into one DuckDB connection so you can join or union across them with plain SQL:
 
@@ -308,25 +343,51 @@ with MultiStore() as ms:
 
 See [`site/recipes/analysis/multistore.md`](site/recipes/analysis/multistore.md) for identity-linking patterns, mixing in Parquet/CSV files, and a PostGIS `location`-column caveat.
 
+### 7. GDPR Erasure
+
+Handle deletion requests by recomputing a pseudonym for a given identity and locating their data across databases. Supports hard deletion or in-place scrubbing:
+
+```python
+from smdt.pseudonymizer import Eraser, ErasureTarget, ErasureMode
+from smdt.config import PseudonymizationVariables
+
+pseudo_vars = PseudonymizationVariables()
+
+eraser = Eraser(
+    targets=[
+        ErasureTarget(db_name="my_dataset", mode=ErasureMode.DELETE, is_pseudonymized=False),
+        ErasureTarget(db_name="my_dataset_pseudo", mode=ErasureMode.SCRUB, is_pseudonymized=True),
+    ],
+    pepper=pseudo_vars.pepper,
+)
+
+eraser.erase("real_account_id_123", identity_column="account_id")
+```
+
+No reverse-mapping table is stored. Erasure works by forward recomputation of the pepper-keyed hash.
+
 
 ## Project Structure
 
 ```
 SMDT/
 ├── src/smdt/                  # Main package
-│   ├── pseudonymizer/         # Redaction and pseudonymization utilities
-│   ├── config.py              # Configuration (DB, pseudonymization)
-│   ├── enrichers/             # Text enrichment framework (local + server adapters)
+│   ├── pseudonymizer/         # Hashing, redaction, PII detection, GDPR erasure
+│   ├── config.py              # Configuration (DB, pseudonymization pepper)
+│   ├── enrichers/             # NLP enrichment framework (local + server adapters)
 │   ├── ingest/                # Ingestion pipelines and deduplication logic
 │   ├── inspector/             # Data quality inspection utilities
-│   ├── io/                    # Streaming readers (JSONL, CSV, ZIP)
+│   ├── io/                    # Streaming readers (JSONL, CSV, Parquet, ZIP, TAR)
 │   ├── multistore/            # Cross-dataset analysis via DuckDB (MultiStore)
 │   ├── networks/              # Network builders and streaming helpers
-│   ├── standardizers/         # Platform-specific normalizers (Twitter, Bluesky, etc.)
-│   └── store/                 # DB models and StandardDB abstraction
+│   ├── standardizers/         # Platform-specific normalizers (15+ variants)
+│   └── store/                 # DB models, schema, and StandardDB abstraction
+├── benchmark_scripts/         # Ingestion, query, and pseudonymization benchmarks
+├── site/                      # Documentation site (VitePress)
 ├── tests/
 │   ├── unit/                  # Fast unit tests (no external deps)
 │   └── integration/           # DB integration tests (requires Postgres)
+├── standardizer_scripts/      # Production driver scripts for specific datasets
 ├── prompt.yml                 # Prompt templates for enrichers
 └── pyproject.toml             # Project metadata and dependencies
 ```
@@ -350,14 +411,29 @@ Beyond the core tables, a few auxiliary tables support enrichment and dataset bo
 
 | Table | Key Fields | Written by |
 | :--- | :--- | :--- |
-| **PostEnrichments** (`post_enrichments`) | `post_id`, `model_id`, `body` (JSONB), `created_at`, `retrieved_at` | The [enrichment framework](#4-enrich-data) — one row per `(post_id, model_id)`. |
-| **AccountEnrichments** (`account_enrichments`) | `account_id`, `model_id`, `body` (JSONB), `created_at`, `retrieved_at` | The enrichment framework — one row per `(account_id, model_id)`. |
+| **PostEnrichments** (`post_enrichments`) | `post_id`, `model_id`, `body` (JSONB), `created_at`, `retrieved_at` | The [enrichment framework](#5-enrich-data): one row per `(post_id, model_id)`. |
+| **AccountEnrichments** (`account_enrichments`) | `account_id`, `model_id`, `body` (JSONB), `created_at`, `retrieved_at` | The enrichment framework: one row per `(account_id, model_id)`. |
 | **DatasetMeta** (`dataset_meta`) | `platform`, `standardizer_name`, `dataset_description`, `created_at`, `updated_at` | One row per database, describing the dataset ingested into it. |
 
 --- 
 ----------
 
-## Development & Testing
+## Performance
+
+Benchmarked against a real 10M-post Twitter dataset (86M normalized DB rows, 44.6 GB):
+
+| Metric | Single-worker | 8-worker parallel |
+|---|---|---|
+| Ingestion throughput | ~360 rec/s (flat across scale) | up to 2,092 rec/s (5.9x speedup) |
+| Peak memory | 462 MB | 1,376 MB |
+| Query latency (indexed point lookup) | 3.1 ms (p50) | n/a |
+| Query latency (unindexed scan) | 2,623 ms (p50) | n/a |
+| Pseudonymization (full 86M rows) | 8.7 hours | 2.7 hours (3.2x speedup) |
+
+See [`benchmark_scripts/`](benchmark_scripts/) for the full benchmark suite and [`benchmark_scripts/benchmark_summary.pdf`](benchmark_scripts/benchmark_summary.pdf) for the summary figure.
+
+
+## Development and Testing
 
 Please ensure you follow existing code styles and add tests for new behaviors.
 
@@ -387,10 +463,17 @@ To add support for a platform like Threads:
 2.  Update `src/smdt/standardizers/__init__.py` to import and expose the new standardizer.
     
 
-## <a name="citation"></a> Citation
+## Citation
+
 ```bibtex
+@article{najafi2025smdt,
+  title   = {Social Media Data Toolkit: Standardization and Pseudonymization of Social Network Datasets},
+  author  = {Najafi, Ali and Iannucci, Stefano and Kivel\"a, Mikko and Varol, Onur},
+  journal = {To appear},
+  year    = {2025}
+}
 ```
 
 ## License
 
-[License Information Here]
+MIT License. See [`LICENSE`](LICENSE) for details.
