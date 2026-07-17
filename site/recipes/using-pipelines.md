@@ -1,5 +1,5 @@
 ---
-description: Understand SMDT's ingestion pipeline system: discovering files, batching database inserts, parallel workers, deduplication, and handling errors at scale.
+description: "Understand SMDT's ingestion pipeline system: discovering files, batching database inserts, parallel workers, deduplication, and handling errors at scale."
 ---
 
 # Using Ingestion Pipelines

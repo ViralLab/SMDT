@@ -1,5 +1,5 @@
 ---
-description: Hash identifiers, redact free text, and handle GDPR erasure with SMDT's configurable pseudonymization pipeline. Three-layer privacy: column hashing, regex redaction, and optional Presidio PII detection.
+description: "Hash identifiers, redact free text, and handle GDPR erasure with SMDT's configurable pseudonymization pipeline. Three-layer privacy: column hashing, regex redaction, and optional Presidio PII detection."
 ---
 
 # Pseudonymization

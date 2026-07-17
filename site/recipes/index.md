@@ -1,5 +1,5 @@
 ---
-description: Step-by-step recipes for SMDT: ingest, enrich, pseudonymize, and analyze social media data. Ordered from getting started through advanced customization.
+description: "Step-by-step recipes for SMDT: ingest, enrich, pseudonymize, and analyze social media data. Ordered from getting started through advanced customization."
 ---
 
 # Recipes

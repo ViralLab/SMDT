@@ -1,5 +1,5 @@
 ---
-description: Sanity-check your ingested data with SMDT's database inspector: row counts, per-column completeness, and enum distributions before relying on the data.
+description: "Sanity-check your ingested data with SMDT's database inspector: row counts, per-column completeness, and enum distributions before relying on the data."
 ---
 
 # Using the Database Inspector
