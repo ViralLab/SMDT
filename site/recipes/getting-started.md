@@ -1,6 +1,28 @@
 # Getting Started
 
-This guide walks you through the initial steps of using the SMDT package.
+This guide walks you through the initial steps of using SMDT: connecting to a database, running your first standardizer, and verifying the result.
+
+## Quickstart
+
+The shortest path from a raw JSONL file to a database:
+
+```python
+from smdt.io.readers import discover
+from smdt.ingest.plan import plan_directories
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.store.standard_db import StandardDB
+from smdt.standardizers import TwitterV2Standardizer
+from smdt.store.models import Accounts, Posts, Entities
+
+discover()
+plan = plan_directories(roots=["/path/to/your/data"], include=("*.jsonl",))
+db = StandardDB("my_first_db", initialize=True)
+run_pipeline(plan, db, TwitterV2Standardizer(), config=PipelineConfig(
+    on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+))
+```
+
+That is the core pattern. The rest of this guide explains each step in detail.
 
 ## 1. Environment Verification
 
@@ -22,28 +44,37 @@ DB_HOST=localhost
 DB_PORT=5432
 ```
 
-## 3. Using Standardizers
+## 3. Using a Standardizer
 
-SMDT provides standardizers to clean and normalize data from various social media platforms. Here is an example using the `TwitterUSCStandardizer`.
+SMDT provides standardizers to normalize data from various social media platforms. Each standardizer takes a raw record (a Python `dict`) and returns normalized model objects ready for insertion.
 
 ```python
-from smdt.standardizers import TwitterUSCStandardizer
+from smdt.standardizers import TwitterV2Standardizer
+from smdt.standardizers.base import SourceInfo
 
-# Initialize the standardizer
-standardizer = TwitterUSCStandardizer()
+standardizer = TwitterV2Standardizer()
 
-# Example raw data (this will vary based on the platform)
 raw_tweet = {
-    "text": "Hello world! #SMDT @ViralLab",
-    "created_at": "2023-10-27T10:00:00Z",
-    "id": "1234567890"
+    "data": {
+        "id": "1234567890",
+        "text": "Hello world! #SMDT @VarolLab",
+        "author_id": "987654321",
+        "created_at": "2023-10-27T10:00:00Z",
+        "public_metrics": {"retweet_count": 5, "reply_count": 2,
+                           "like_count": 42, "quote_count": 1}
+    },
+    "includes": {
+        "users": [{"id": "987654321", "name": "Varol Lab",
+                   "username": "VarolLab"}]
+    }
 }
 
-# Standardize the data
-# (Note: Specific usage depends on the standardizer implementation)
-# standardized_data = standardizer.standardize(raw_tweet)
-# print(standardized_data)
+models = standardizer.standardize((raw_tweet, SourceInfo(path="")))
+for m in models:
+    print(type(m).__name__, m.insert_values())
 ```
+
+This prints the generated Accounts, Posts, Entities, and Actions rows ready to be written to the database.
 
 ## 4. Connecting to the Database
 
@@ -53,24 +84,17 @@ You can connect to your TimescaleDB-enabled PostgreSQL database using `StandardD
 from smdt.store.standard_db import StandardDB
 import os
 
-# Initialize database connection
-# Note: Ensure you pass the correct database name
 db_name = os.getenv("DEFAULT_DB_NAME", "smdt_db")
-# set initialize=False to skip auto initialization if you already initialized the database
-db = StandardDB(db_name, initialize=False) 
+db = StandardDB(db_name, initialize=False)
 
-try:
-    # Check connection
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-            print(f"Connected to database '{db_name}' successfully!")
-except Exception as e:
-    print(f"Database connection failed: {e}")
+with db.connect() as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1")
+        print(f"Connected to database '{db_name}' successfully")
 ```
 
 ## Next Steps
 
 Now that you can connect to the database and run a standardizer, the next step is scaling that up to thousands of files with [Using Ingestion Pipelines](./using-pipelines.md).
 
-That's the first of several steps after ingestion -- enrichment, privacy, and analysis. See the [Recipes Overview](./index.md) for the full path.
+That is the first of several steps after ingestion: enrichment, privacy, and analysis. See the [Recipes Overview](./index.md) for the full path.

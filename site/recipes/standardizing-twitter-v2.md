@@ -1,82 +1,8 @@
 # Standardizing Twitter API v2 Data
 
-This recipe demonstrates how to generate a sample Twitter API v2 dataset and standardize it using SMDT.
+This recipe walks through ingesting Twitter API v2 data (JSONL format) into SMDT. The same pattern applies to any platform: point at your files, create a plan, and run the pipeline.
 
-## 1. Generate Sample Data
-
-First, let's create a Python script to generate a sample dataset in JSONL format. This simulates the output you might get from the Twitter API.
-
-Create a file named `generate_twitter_data.py`:
-
-```python
-import json
-import random
-from datetime import datetime, timezone
-
-def generate_sample_tweet(tweet_id, author_id, conversation_id=None):
-    now = datetime.now(timezone.utc).isoformat()
-    
-    return {
-        "data": {
-            "id": str(tweet_id),
-            "text": f"This is sample tweet #{tweet_id} about #SMDT",
-            "author_id": str(author_id),
-            "created_at": now,
-            "conversation_id": str(conversation_id or tweet_id),
-            "public_metrics": {
-                "retweet_count": random.randint(0, 100),
-                "reply_count": random.randint(0, 50),
-                "like_count": random.randint(0, 500),
-                "quote_count": random.randint(0, 20),
-                "impression_count": random.randint(100, 10000)
-            },
-            "lang": "en"
-        },
-        "includes": {
-            "users": [
-                {
-                    "id": str(author_id),
-                    "name": f"User {author_id}",
-                    "username": f"user_{author_id}",
-                    "created_at": "2020-01-01T00:00:00Z",
-                    "public_metrics": {
-                        "followers_count": random.randint(100, 1000),
-                        "following_count": random.randint(100, 500),
-                        "tweet_count": random.randint(50, 2000),
-                        "listed_count": random.randint(0, 10)
-                    }
-                }
-            ]
-        }
-    }
-
-def main():
-    with open("sample_twitter_v2.jsonl", "w") as f:
-        # Generate 5 sample tweets
-        for i in range(1, 6):
-            tweet = generate_sample_tweet(
-                tweet_id=1000 + i, 
-                author_id=500 + (i % 2) # Toggle between two authors
-            )
-            f.write(json.dumps(tweet) + "\n")
-            
-    print("Generated sample_twitter_v2.jsonl with 5 records.")
-
-if __name__ == "__main__":
-    main()
-```
-
-Run the script to generate the data:
-
-```bash
-python generate_twitter_data.py
-```
-
-## 2. Standardize the Data
-
-SMDT uses a pipeline architecture to handle large-scale data ingestion efficiently. Instead of manually reading files, we define a specialized ingestion plan and run it through a pipeline.
-
-Create a file named `run_standardization.py`:
+## Quickstart
 
 ```python
 from smdt.io.readers import discover
@@ -84,124 +10,139 @@ from smdt.ingest.plan import plan_directories, print_plan
 from smdt.ingest.pipeline import run_pipeline, PipelineConfig
 from smdt.store.standard_db import StandardDB
 from smdt.standardizers import TwitterV2Standardizer
-from smdt.store.models import (
-    Accounts,
-    Posts,
-    Entities,
-    AccountEnrichments,
-    PostEnrichments,
-)
-import os
+from smdt.store.models import Accounts, Posts, Entities
 
-# 1. Register readers (JSONL, CSV, etc.)
 discover()
+plan = plan_directories(roots=["/path/to/your/twitter/data"], include=("*.jsonl",))
+print_plan(plan)
 
-def main():
-    # Define the directory where our sample data lives
-    # In this example, it's the current directory
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+db = StandardDB("twitter_v2_db", initialize=True)
 
-    # 2. Create an ingestion plan
-    # This scans the directory for files matching the pattern
-    plan = plan_directories(
-        roots=[current_dir],
-        include=("sample_twitter_v2.jsonl",),
-    )
-
-    print_plan(plan)
-
-    # 3. Initialize Database Connection
-    # The 'initialize=True' flag ensures schemas are created if they don't exist
-    db = StandardDB("twitter_v2_sample", initialize=True)
-
-    # 4. Initialize Standardizer
-    standardizer = TwitterV2Standardizer()
-
-    # 5. Configure the Pipeline
-    # Defines how to handle conflicts (e.g., if a post already exists)
-    # and batch processing sizes.
-    pipeline_cfg = PipelineConfig(
+run_pipeline(
+    plan, db, TwitterV2Standardizer(),
+    config=PipelineConfig(
         batch_size=1000,
-        chunk_size=1000,
-        on_conflict={
-            Accounts: "DO NOTHING",
-            Posts: "DO NOTHING",
-            Entities: "DO NOTHING",
-            AccountEnrichments: "DO NOTHING",
-            PostEnrichments: "DO NOTHING",
-        },
-        progress=lambda event, info: print(f"[Progress] {event}: {info}")
-    )
-
-    # 6. Run the Pipeline
-    print("\nStarting Pipeline...")
-    run_pipeline(
-        plan,
-        db,
-        standardizer,
-        config=pipeline_cfg,
-        hints={"dataset": "sample_dataset"},
-    )
-    print("\nPipeline Finished!")
-
-if __name__ == "__main__":
-    main()
+        on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+    ),
+)
 ```
 
-::: tip Tuning chunk interval, space partitioning, and compression
-`initialize=True` applies the standard schema with default hypertable tuning
-(chunk interval, space partitioning, compression) chosen for a large
-Twitter-scale dataset. If your dataset has a very different volume or
-shape, pass a custom `hypertable_config`:
+## Step by Step
+
+### 1. Point at Your Data
+
+`plan_directories` scans a directory for files matching the `include` pattern. It resolves the correct reader for each file automatically. Run `print_plan` to preview what will be ingested before committing.
+
+```python
+plan = plan_directories(roots=["/data/twitter/"], include=("*.jsonl",))
+print_plan(plan)
+# This shows a colorized table of files and readers. It asks for confirmation.
+```
+
+### 2. Initialize the Database
+
+```python
+db = StandardDB("twitter_v2_db", initialize=True)
+```
+
+`initialize=True` creates the schema if it does not already exist. For a second run on the same database, use `initialize=False`.
+
+### 3. Run the Pipeline
+
+The pipeline reads files, standardizes each record, deduplicates within each batch, and flushes to the database. The `on_conflict` parameter uses `DO NOTHING` so repeated ingestion of the same files is safe.
+
+```python
+run_pipeline(
+    plan, db, TwitterV2Standardizer(),
+    config=PipelineConfig(
+        batch_size=1_000,
+        chunk_size=1_000,
+        on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+    ),
+)
+```
+
+## Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `roots` | required | List of directories to scan |
+| `include` | `("*",)` | Glob pattern for files to include |
+| `exclude` | `()` | Glob pattern for files to skip |
+| `batch_size` | `100_000` | Rows to buffer before flushing to DB |
+| `chunk_size` | `100_000` | Rows per database INSERT chunk |
+| `on_conflict` | `None` | Per-model conflict resolution (e.g., `DO NOTHING`) |
+
+::: tip Tuning hypertables for your data volume
+`initialize=True` applies a default hypertable configuration sized for large Twitter-scale datasets. For smaller datasets, smaller chunk intervals reduce the number of chunks each query must scan:
 
 ```python
 from dataclasses import replace
 from datetime import timedelta
 from smdt.store.schema_config import SchemaConfig
 
-# Example: a much smaller dataset benefits from smaller chunks than the
-# 7-day default (fewer chunks fan out to scan, but each stays small).
-custom_schema = SchemaConfig(tables={
+custom = SchemaConfig(tables={
     **SchemaConfig().tables,
     "posts": replace(SchemaConfig().tables["posts"], chunk_time_interval=timedelta(days=1)),
 })
-db = StandardDB("twitter_v2_sample", initialize=True, hypertable_config=custom_schema)
+db = StandardDB("twitter_v2_db", initialize=True, hypertable_config=custom)
 ```
-
-See `src/smdt/store/schema_config.py` for every tunable field (per-table
-chunk interval, space partitioning, compression segment/policy).
 :::
 
-## 3. Run the Standardization
+## Expected Output
 
-Execute the standardization script:
+A successful run prints progress bars and flush summaries:
 
-```bash
-python run_standardization.py
 ```
-
-You should see output indicating the plan is created and the pipeline is processing the file:
-
-```text
 Ingestion plan:
-  FILE  [✓] /cta/users/anajafi/SMDT/sample_twitter_v2.jsonl  [2,690B  2026-02-17T20:03:59]  → jsonl
+  FILE  [✓] twitter_data.jsonl  → jsonl
 
-By reader:
-  jsonl        : 1
-Should I start ingestion? (y/n): y
-
-
-Starting Pipeline...
-Pipeline files:   0%|                                                                                                                                                           | 0/1 [00:00<?, ?it/s][Progress] 
-file_start: {'path': 'current_dir/sample_twitter_v2.jsonl'}
-                                   [Progress] file_end: {'path': '/cta/users/anajafi/SMDT/sample_twitter_v2.jsonl', 'records': 5, 'models': 20, 'record_errors': 0, 'row_failures': 0, 'elapsed': 0.4030951801687479}                    
-Pipeline files: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.48it/s]
-[Progress] flush: {'model': 'Accounts', 'count': 2, 'elapsed': 0.12162525579333305}
-[Progress] flush: {'model': 'Posts', 'count': 5, 'elapsed': 0.16321173310279846}
-[Progress] flush: {'model': 'Entities', 'count': 10, 'elapsed': 0.1657374557107687}
-[Progress] done: {'files': 1, 'records': 5, 'models': 20, 'record_errors': 0, 'row_failures': 0, 'failed_models_total': 0, 'failed_models_by_class': {}, 'elapsed': 0.8682915344834328}
-
-Pipeline Finished!
+Pipeline files: 100%|████████████████████| 1/1 [00:01<00:00]
+[Progress] flush: {'model': 'Accounts', 'count': 152}
+[Progress] flush: {'model': 'Posts', 'count': 500}
+[Progress] flush: {'model': 'Entities', 'count': 1207}
+[Progress] done: {'files': 1, 'records': 500, 'record_errors': 0, 'row_failures': 0}
 ```
 
-This approach is scalable and can handle thousands of files by simply adjusting the `plan_directories` path and patterns.
+## Prerequisites
+
+- Database configured (see [Getting Started](./getting-started.md))
+- Twitter API v2 JSONL files (one JSON object per line, with `data` and `includes` keys)
+
+::: details Don't have Twitter data? Generate a sample
+Create a small test file to verify your setup:
+
+```python
+import json, random
+from datetime import datetime, timezone
+
+with open("sample_twitter_v2.jsonl", "w") as f:
+    for i in range(1, 6):
+        tweet = {
+            "data": {
+                "id": str(1000 + i),
+                "text": f"Sample tweet #{i} about #SMDT",
+                "author_id": str(500 + (i % 2)),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "conversation_id": str(1000 + i),
+                "public_metrics": {"retweet_count": random.randint(0, 100),
+                                   "reply_count": random.randint(0, 50),
+                                   "like_count": random.randint(0, 500),
+                                   "quote_count": random.randint(0, 20)}
+            },
+            "includes": {
+                "users": [{"id": str(500 + (i % 2)),
+                           "name": f"User {500 + (i % 2)}",
+                           "username": f"user_{500 + (i % 2)}"}]
+            }
+        }
+        f.write(json.dumps(tweet) + "\n")
+print("Generated sample_twitter_v2.jsonl with 5 records")
+```
+:::
+
+## Next Steps
+
+- Verify the ingested data with [Using the Database Inspector](./analysis/inspector.md)
+- Apply [Pseudonymization](./pseudonymization.md) before sharing the dataset
+- [Build networks](./networks/construction.md) from the ingested data
