@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://varollab.com/SMDT/sitemap.xml

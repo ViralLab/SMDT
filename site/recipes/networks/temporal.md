@@ -1,3 +1,7 @@
+---
+description: Generate networks over sliding time windows to analyze how community structures evolve. Build weekly or daily interaction graphs with configurable weights and thresholds.
+---
+
 # Temporal Networks
 
 This recipe shows how to generate networks over sliding time windows, letting you analyze how community structures evolve day by day or week by week.

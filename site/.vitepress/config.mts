@@ -2,14 +2,25 @@ import { defineConfig } from 'vitepress'
 import { apiSidebar } from './apiSidebar.mjs'
 
 export default defineConfig({
-  title: 'SMDT',
-  description: 'Docs generated from source',
-  base: '/SMDT/',                  // keep for GitHub Pages
+  title: 'SMDT — Social Media Data Toolkit',
+  description: 'Ingest, standardize, pseudonymize, enrich, and analyze social media data across 11+ platforms. Open-source toolkit for computational social science.',
+  base: '/SMDT/',
   appearance: 'dark',
   lastUpdated: true,
   cleanUrls: true,
   ignoreDeadLinks: true,
+  sitemap: {
+    hostname: 'https://varollab.com',
+  },
   head: [
+    ['meta', { name: 'author', content: 'Varol Lab' }],
+    ['meta', { name: 'keywords', content: 'social media, data toolkit, pseudonymization, cross-platform, Twitter, Bluesky, TruthSocial, GDPR, network analysis, NLP enrichment' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:title', content: 'SMDT — Social Media Data Toolkit' }],
+    ['meta', { property: 'og:description', content: 'Open-source toolkit for ingesting, standardizing, pseudonymizing, and analyzing social media data across 11+ platforms.' }],
+    ['meta', { property: 'og:image', content: 'https://varollab.com/SMDT/og-image.png' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['link', { rel: 'canonical', href: 'https://varollab.com/SMDT/' }],
     [
       'script',
       { async: '', src: 'https://www.googletagmanager.com/gtag/js?id=G-YB7W3XFS3Q' }

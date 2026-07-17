@@ -1,3 +1,7 @@
+---
+description: Ingest Twitter API v2 JSONL data into SMDT. Point at your files, create an ingestion plan, and run the pipeline. Same pattern works for any platform.
+---
+
 # Standardizing Twitter API v2 Data
 
 This recipe walks through ingesting Twitter API v2 data (JSONL format) into SMDT. The same pattern applies to any platform: point at your files, create a plan, and run the pipeline.
@@ -13,7 +17,7 @@ from smdt.standardizers import TwitterV2Standardizer
 from smdt.store.models import Accounts, Posts, Entities
 
 discover()
-plan = plan_directories(roots=["/path/to/your/twitter/data"], include=("*.jsonl",))
+plan = plan_directories(roots=["/path/to/your/twitter/data"], include=("*twitter*.jsonl",))
 print_plan(plan)
 
 db = StandardDB("twitter_v2_db", initialize=True)
@@ -91,17 +95,21 @@ db = StandardDB("twitter_v2_db", initialize=True, hypertable_config=custom)
 
 ## Expected Output
 
-A successful run prints progress bars and flush summaries:
+A successful run prints plan confirmation and progress:
 
 ```
 Ingestion plan:
-  FILE  [✓] twitter_data.jsonl  → jsonl
+  FILE  [✓] /data/twitter/twitter_data.jsonl  → jsonl
+
+By reader:
+  jsonl        : 1
+Should I start ingestion? (y/n): y
 
 Pipeline files: 100%|████████████████████| 1/1 [00:01<00:00]
-[Progress] flush: {'model': 'Accounts', 'count': 152}
-[Progress] flush: {'model': 'Posts', 'count': 500}
-[Progress] flush: {'model': 'Entities', 'count': 1207}
-[Progress] done: {'files': 1, 'records': 500, 'record_errors': 0, 'row_failures': 0}
+[Progress] flush: {'model': 'Accounts', 'count': 2}
+[Progress] flush: {'model': 'Posts', 'count': 5}
+[Progress] flush: {'model': 'Entities', 'count': 10}
+[Progress] done: {'files': 1, 'records': 5, 'record_errors': 0, 'row_failures': 0}
 ```
 
 ## Prerequisites

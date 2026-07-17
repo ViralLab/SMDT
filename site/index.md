@@ -1,4 +1,5 @@
 ---
+description: SMDT is an open-source toolkit for ingesting, standardizing, pseudonymizing, enriching, and analyzing social media data across 11+ platforms including Twitter, Bluesky, TruthSocial, Reddit, Telegram, and more.
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
 

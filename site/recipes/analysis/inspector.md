@@ -1,3 +1,7 @@
+---
+description: Sanity-check your ingested data with SMDT's database inspector: row counts, per-column completeness, and enum distributions before relying on the data.
+---
+
 # Using the Database Inspector
 
 SMDT includes a built-in `Inspector` tool to help you visualize the contents and quality of your database. It provides a terminal-friendly report showing:

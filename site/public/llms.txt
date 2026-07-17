@@ -1,0 +1,38 @@
+# SMDT — Social Media Data Toolkit
+> Ingest, standardize, pseudonymize, enrich, and analyze social media data across 11+ platforms.
+
+## Quick Links
+- Home: https://varollab.com/SMDT/
+- Install: https://varollab.com/SMDT/installation/
+- API Reference: https://varollab.com/SMDT/api/
+
+## Core Concepts
+- SMDT normalizes heterogeneous social media exports (Twitter/X, Bluesky, TruthSocial, Reddit, Telegram, Gab, Koo, Parler, Voat, Weibo) into one relational Postgres schema.
+- Platforms: 11+ supported via 15+ standardizer variants.
+- Schema: 5 core tables (Communities, Accounts, Posts, Actions, Entities) + 2 enrichment tables.
+- Database: Postgres + TimescaleDB + PostGIS. One database per dataset.
+- Pipeline: discover files → plan → standardize → dedup → bulk insert with 3-tier fallback (COPY → VALUES → SAVEPOINT).
+- Pseudonymization: DB-to-DB ETL with configurable column policy (hash/redact/drop/blank/keep), regex redactor, optional Presidio-based PII detection, GDPR erasure.
+- Enrichment: bot detection, toxicity, language detection, LLM labeling, embeddings. Privacy preprocessor redacts before external API calls.
+- Networks: user interaction, entity co-occurrence, bipartite, coaction graphs. Temporal window support.
+- Cross-platform: MultiStore attaches multiple Postgres DBs into one DuckDB connection for SQL joins across datasets.
+- Erasure: forward-only GDPR right-to-erasure. No reverse mapping stored.
+
+## Docs
+- Getting Started: /recipes/getting-started.md
+- Standardizing Twitter v2: /recipes/standardizing-twitter-v2.md
+- Ingestion Pipelines: /recipes/using-pipelines.md
+- Pseudonymization: /recipes/pseudonymization.md
+- NLP Enrichment: /recipes/enrichment/nlp.md
+- Network Construction: /recipes/networks/construction.md
+- Temporal Networks: /recipes/networks/temporal.md
+- Cross-Platform (MultiStore): /recipes/analysis/multistore.md
+- Database Inspector: /recipes/analysis/inspector.md
+- Custom Standardizer: /recipes/building-custom-standardizer.md
+- Custom Enricher: /recipes/enrichment/building-custom-enricher.md
+- Installation: /installation/index.md
+
+## Optional
+- Pseudonymization details: /recipes/pseudonymization.md (PII detection, parallel processing, GDPR erasure)
+- Full paper: [arXiv]
+- GitHub: https://github.com/ViralLab/SMDT

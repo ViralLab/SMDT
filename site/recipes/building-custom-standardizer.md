@@ -1,3 +1,7 @@
+---
+description: Map a new, unsupported data source into SMDT's schema by implementing a custom standardizer. Complete runnable example using a CSV dataset.
+---
+
 # Building a Custom Standardizer
 
 This recipe guides you through creating a custom standardizer to ingest data from a new source format (e.g., a custom CSV or JSON) into the SMDT database.

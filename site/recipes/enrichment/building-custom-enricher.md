@@ -1,3 +1,7 @@
+---
+description: Build a custom enricher from scratch in SMDT. Step-by-step tutorial covering fetch, preprocess, process, and save, with a complete runnable example.
+---
+
 # Building a Custom Enricher
 
 This recipe walks through writing your own enricher from scratch: a `WordCountEnricher` that writes `{"word_count": int, "char_count": int}` for every post. It builds the class one method at a time, then shows the complete file, how to register and run it, and how to test it.

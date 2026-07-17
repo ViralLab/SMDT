@@ -1,3 +1,7 @@
+---
+description: Set up SMDT, connect to a database, run your first standardizer, and verify the result. The quickest path from raw JSONL to normalized data.
+---
+
 # Getting Started
 
 This guide walks you through the initial steps of using SMDT: connecting to a database, running your first standardizer, and verifying the result.

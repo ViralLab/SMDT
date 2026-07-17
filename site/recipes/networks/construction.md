@@ -1,3 +1,7 @@
+---
+description: Build entity co-occurrence, bipartite, and user-interaction graphs from your SMDT database. Export to NetworkX, pandas, or CSV.
+---
+
 # Network Construction
 
 SMDT provides powerful tools to construct various types of networks from your social media data. These functions generate networks over a specified period.

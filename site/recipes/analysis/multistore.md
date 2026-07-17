@@ -1,3 +1,7 @@
+---
+description: Query across multiple SMDT databases with plain SQL using MultiStore. Attach per-dataset Postgres databases into one DuckDB connection and join or union across platforms.
+---
+
 # Cross-Platform Analysis with MultiStore
 
 SMDT stores every dataset in its own Postgres database. That's great for isolation, but if you have a `twitter_db` and a `bluesky_db` and want to compare accounts, posts, or networks across them, you need a way to query more than one database at once.

@@ -1,3 +1,7 @@
+---
+description: Run NLP enrichment on your data with local (Ollama, Hugging Face) or hosted (OpenAI, Anthropic, Gemini) LLMs. Built-in privacy layer redacts PII before external API calls.
+---
+
 # NLP Enrichment with LLMs
 
 This recipe demonstrates how to enrich posts in your database using Large Language Models (LLMs). SMDT supports various providers including **OpenAI**, **Anthropic**, **Gemini**, **Ollama**, and **Hugging Face** via the `text_generation` enricher.
@@ -28,7 +32,7 @@ Ensure you have the necessary API keys or a local LLM server running (e.g., Olla
 | `TextGenerationConfig.for_gemini(model, api_key, **kwargs)` | Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | `TextGenerationConfig.for_ollama(model, base_url="http://localhost:11434/v1", **kwargs)` | Ollama (local) | as given, defaults to local |
 
-Every other field is passed through `**kwargs` and is identical to constructing `TextGenerationConfig(...)` directly. There's no factory for Hugging Face Inference Endpoints (`provider_kind="hf-text"`) since each one has its own endpoint URL rather than one shared host — construct `TextGenerationConfig(...)` directly for that case (see the [example below](#5-hugging-face-inference-endpoints)).
+Every other field is passed through `**kwargs` and is identical to constructing `TextGenerationConfig(...)` directly. There is no factory for Hugging Face Inference Endpoints (`provider_kind="hf-text"`) since each one has its own endpoint URL rather than one shared host. Construct `TextGenerationConfig(...)` directly for that case (see the [example below](#5-hugging-face-inference-endpoints)).
 
 ### Prompting
 
@@ -179,7 +183,7 @@ print("Done.")
 
 ### 5. Hugging Face Inference Endpoints
 
-Each Hugging Face Inference Endpoint has its own URL, so there's no `for_hf_text` factory — construct `TextGenerationConfig` directly with `provider_kind="hf-text"`.
+Each Hugging Face Inference Endpoint has its own URL, so there is no `for_hf_text` factory. Construct `TextGenerationConfig` directly with `provider_kind="hf-text"`.
 
 ```python
 import os
@@ -238,7 +242,7 @@ run_enricher("text_generation", db=db, config=config)
 
 If `base_url` points at a known commercial API host (OpenAI, Anthropic, Gemini, or the Hugging Face Inference API) and `privacy_fields` is left empty, SMDT logs a warning so this isn't a silent default. Without a `pii_policy`, `privacy_fields` still get baseline mention/email/URL redaction via the dependency-free `Redactor`; `pii_policy` (e.g. `DEFAULT_PII_POLICY`) upgrades this to Presidio-based detection covering phone numbers, credit cards, and person names.
 
-Need to clean something up afterward (e.g. leftover formatting artifacts the redaction pass introduces)? Add your own `preprocessors=[...]` — it runs after the privacy layer and before the LLM sees the row.
+Need to clean something up afterward, like leftover formatting artifacts the redaction pass introduces? Add your own `preprocessors=[...]`. It runs after the privacy layer and before the LLM sees the row.
 
 ## Viewing Results
 

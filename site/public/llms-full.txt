@@ -1,0 +1,2113 @@
+---
+description: Step-by-step recipes for SMDT: ingest, enrich, pseudonymize, and analyze social media data. Ordered from getting started through advanced customization.
+---
+
+# Recipes
+
+Welcome to the SMDT recipes collection. Every dataset goes through roughly the same journey: **ingest** raw platform exports into a standardized database, optionally **enrich** and **protect** that data, then **analyze** it. The recipes below are ordered to match that journey. Read them in order the first time through, or jump straight to whichever step you need.
+
+## Start Here
+
+New to SMDT? Start with [Getting Started](./getting-started.md). It verifies your installation, configures your database connection, and runs your first standardizer. Every other recipe assumes you have done this.
+
+## 1. Ingest & Verify Your Data
+
+Bring raw platform exports into SMDT's standardized schema, then check the result before building on top of it.
+
+- **[Using Ingestion Pipelines](./using-pipelines.md)**: the core pipeline system, discovering files, batching database inserts, and handling errors at scale.
+- **[Standardizing Twitter API v2 Data](./standardizing-twitter-v2.md)**: a complete, concrete walkthrough using `TwitterV2Standardizer` end to end.
+- **[Using the Database Inspector](./analysis/inspector.md)**: sanity-check what you just ingested: row counts, per-column completeness, and enum distributions, before you rely on the data for anything else.
+
+## 2. Enrich Your Data
+
+Add computed features to posts you have already ingested: sentiment, toxicity, language, embeddings, or any custom signal.
+
+- **[NLP Enrichment with LLMs](./enrichment/nlp.md)**: configure local (Ollama, Hugging Face) or hosted (OpenAI, Anthropic, Gemini) models for tasks like sentiment analysis, toxicity detection, and topic classification, including the built-in privacy layer for hosted providers.
+
+## 3. Protect & Share Your Data
+
+Before sharing a dataset outside your team, pseudonymize identifiers and redact free text.
+
+- **[Pseudonymization](./pseudonymization.md)**: hash identifiers and redact sensitive text with configurable policies, detect broader PII with the optional Presidio-based engine, and handle GDPR erasure requests.
+
+## 4. Analyze Your Data
+
+Turn standardized (and optionally enriched/protected) data into networks and cross-dataset insight.
+
+- **[Network Construction](./networks/construction.md)**: build entity co-occurrence, bipartite, and user-interaction graphs over a time window.
+- **[Temporal Networks](./networks/temporal.md)**: extract how interactions evolve over time (e.g. weekly retweet graphs) for tools like Gephi or NetworkX.
+- **[Cross-Platform Analysis (MultiStore)](./analysis/multistore.md)**: attach multiple per-dataset databases into one DuckDB connection and join or union across them with plain SQL.
+
+## Advanced & Reference
+
+Read these only if you need them. They extend SMDT rather than continue the core journey above.
+
+- **[Building a Custom Standardizer](./building-custom-standardizer.md)**: map a new, unsupported data source into SMDT's schema.
+- **[Building a Custom Enricher](./enrichment/building-custom-enricher.md)**: write your own enricher from scratch, step by step.
+---
+description: Set up SMDT, connect to a database, run your first standardizer, and verify the result. The quickest path from raw JSONL to normalized data.
+---
+
+# Getting Started
+
+This guide walks you through the initial steps of using SMDT: connecting to a database, running your first standardizer, and verifying the result.
+
+## Quickstart
+
+The shortest path from a raw JSONL file to a database:
+
+```python
+from smdt.io.readers import discover
+from smdt.ingest.plan import plan_directories
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.store.standard_db import StandardDB
+from smdt.standardizers import TwitterV2Standardizer
+from smdt.store.models import Accounts, Posts, Entities
+
+discover()
+plan = plan_directories(roots=["/path/to/your/data"], include=("*.jsonl",))
+db = StandardDB("my_first_db", initialize=True)
+run_pipeline(plan, db, TwitterV2Standardizer(), config=PipelineConfig(
+    on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+))
+```
+
+That is the core pattern. The rest of this guide explains each step in detail.
+
+## 1. Environment Verification
+
+Ensure that you have installed the package and that your Python environment is active.
+
+```bash
+uv run python -c "import smdt; print('SMDT installed successfully')"
+```
+
+## 2. Basic Configuration
+
+Make sure your `.env` file is set up correctly in the root of your project:
+
+```bash
+DEFAULT_DB_NAME=smdt_db
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_HOST=localhost
+DB_PORT=5432
+```
+
+## 3. Using a Standardizer
+
+SMDT provides standardizers to normalize data from various social media platforms. Each standardizer takes a raw record (a Python `dict`) and returns normalized model objects ready for insertion.
+
+```python
+from smdt.standardizers import TwitterV2Standardizer
+from smdt.standardizers.base import SourceInfo
+
+standardizer = TwitterV2Standardizer()
+
+raw_tweet = {
+    "data": {
+        "id": "1234567890",
+        "text": "Hello world! #SMDT @VarolLab",
+        "author_id": "987654321",
+        "created_at": "2023-10-27T10:00:00Z",
+        "public_metrics": {"retweet_count": 5, "reply_count": 2,
+                           "like_count": 42, "quote_count": 1}
+    },
+    "includes": {
+        "users": [{"id": "987654321", "name": "Varol Lab",
+                   "username": "VarolLab"}]
+    }
+}
+
+models = standardizer.standardize((raw_tweet, SourceInfo(path="")))
+for m in models:
+    print(type(m).__name__, m.insert_values())
+```
+
+This prints the generated Accounts, Posts, Entities, and Actions rows ready to be written to the database.
+
+## 4. Connecting to the Database
+
+You can connect to your TimescaleDB-enabled PostgreSQL database using `StandardDB`.
+
+```python
+from smdt.store.standard_db import StandardDB
+import os
+
+db_name = os.getenv("DEFAULT_DB_NAME", "smdt_db")
+db = StandardDB(db_name, initialize=False)
+
+with db.connect() as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1")
+        print(f"Connected to database '{db_name}' successfully")
+```
+
+## Next Steps
+
+Now that you can connect to the database and run a standardizer, the next step is scaling that up to thousands of files with [Using Ingestion Pipelines](./using-pipelines.md).
+
+That is the first of several steps after ingestion: enrichment, privacy, and analysis. See the [Recipes Overview](./index.md) for the full path.
+---
+description: Ingest Twitter API v2 JSONL data into SMDT. Point at your files, create an ingestion plan, and run the pipeline. Same pattern works for any platform.
+---
+
+# Standardizing Twitter API v2 Data
+
+This recipe walks through ingesting Twitter API v2 data (JSONL format) into SMDT. The same pattern applies to any platform: point at your files, create a plan, and run the pipeline.
+
+## Quickstart
+
+```python
+from smdt.io.readers import discover
+from smdt.ingest.plan import plan_directories, print_plan
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.store.standard_db import StandardDB
+from smdt.standardizers import TwitterV2Standardizer
+from smdt.store.models import Accounts, Posts, Entities
+
+discover()
+plan = plan_directories(roots=["/path/to/your/twitter/data"], include=("*twitter*.jsonl",))
+print_plan(plan)
+
+db = StandardDB("twitter_v2_db", initialize=True)
+
+run_pipeline(
+    plan, db, TwitterV2Standardizer(),
+    config=PipelineConfig(
+        batch_size=1000,
+        on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+    ),
+)
+```
+
+## Step by Step
+
+### 1. Point at Your Data
+
+`plan_directories` scans a directory for files matching the `include` pattern. It resolves the correct reader for each file automatically. Run `print_plan` to preview what will be ingested before committing.
+
+```python
+plan = plan_directories(roots=["/data/twitter/"], include=("*.jsonl",))
+print_plan(plan)
+# This shows a colorized table of files and readers. It asks for confirmation.
+```
+
+### 2. Initialize the Database
+
+```python
+db = StandardDB("twitter_v2_db", initialize=True)
+```
+
+`initialize=True` creates the schema if it does not already exist. For a second run on the same database, use `initialize=False`.
+
+### 3. Run the Pipeline
+
+The pipeline reads files, standardizes each record, deduplicates within each batch, and flushes to the database. The `on_conflict` parameter uses `DO NOTHING` so repeated ingestion of the same files is safe.
+
+```python
+run_pipeline(
+    plan, db, TwitterV2Standardizer(),
+    config=PipelineConfig(
+        batch_size=1_000,
+        chunk_size=1_000,
+        on_conflict={Accounts: "DO NOTHING", Posts: "DO NOTHING", Entities: "DO NOTHING"},
+    ),
+)
+```
+
+## Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `roots` | required | List of directories to scan |
+| `include` | `("*",)` | Glob pattern for files to include |
+| `exclude` | `()` | Glob pattern for files to skip |
+| `batch_size` | `100_000` | Rows to buffer before flushing to DB |
+| `chunk_size` | `100_000` | Rows per database INSERT chunk |
+| `on_conflict` | `None` | Per-model conflict resolution (e.g., `DO NOTHING`) |
+
+::: tip Tuning hypertables for your data volume
+`initialize=True` applies a default hypertable configuration sized for large Twitter-scale datasets. For smaller datasets, smaller chunk intervals reduce the number of chunks each query must scan:
+
+```python
+from dataclasses import replace
+from datetime import timedelta
+from smdt.store.schema_config import SchemaConfig
+
+custom = SchemaConfig(tables={
+    **SchemaConfig().tables,
+    "posts": replace(SchemaConfig().tables["posts"], chunk_time_interval=timedelta(days=1)),
+})
+db = StandardDB("twitter_v2_db", initialize=True, hypertable_config=custom)
+```
+:::
+
+## Expected Output
+
+A successful run prints plan confirmation and progress:
+
+```
+Ingestion plan:
+  FILE  [✓] /data/twitter/twitter_data.jsonl  → jsonl
+
+By reader:
+  jsonl        : 1
+Should I start ingestion? (y/n): y
+
+Pipeline files: 100%|████████████████████| 1/1 [00:01<00:00]
+[Progress] flush: {'model': 'Accounts', 'count': 2}
+[Progress] flush: {'model': 'Posts', 'count': 5}
+[Progress] flush: {'model': 'Entities', 'count': 10}
+[Progress] done: {'files': 1, 'records': 5, 'record_errors': 0, 'row_failures': 0}
+```
+
+## Prerequisites
+
+- Database configured (see [Getting Started](./getting-started.md))
+- Twitter API v2 JSONL files (one JSON object per line, with `data` and `includes` keys)
+
+::: details Don't have Twitter data? Generate a sample
+Create a small test file to verify your setup:
+
+```python
+import json, random
+from datetime import datetime, timezone
+
+with open("sample_twitter_v2.jsonl", "w") as f:
+    for i in range(1, 6):
+        tweet = {
+            "data": {
+                "id": str(1000 + i),
+                "text": f"Sample tweet #{i} about #SMDT",
+                "author_id": str(500 + (i % 2)),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "conversation_id": str(1000 + i),
+                "public_metrics": {"retweet_count": random.randint(0, 100),
+                                   "reply_count": random.randint(0, 50),
+                                   "like_count": random.randint(0, 500),
+                                   "quote_count": random.randint(0, 20)}
+            },
+            "includes": {
+                "users": [{"id": str(500 + (i % 2)),
+                           "name": f"User {500 + (i % 2)}",
+                           "username": f"user_{500 + (i % 2)}"}]
+            }
+        }
+        f.write(json.dumps(tweet) + "\n")
+print("Generated sample_twitter_v2.jsonl with 5 records")
+```
+:::
+
+## Next Steps
+
+- Verify the ingested data with [Using the Database Inspector](./analysis/inspector.md)
+- Apply [Pseudonymization](./pseudonymization.md) before sharing the dataset
+- [Build networks](./networks/construction.md) from the ingested data
+---
+description: Understand SMDT's ingestion pipeline system: discovering files, batching database inserts, parallel workers, deduplication, and handling errors at scale.
+---
+
+# Using Ingestion Pipelines
+
+The SMDT ingestion pipeline is a robust system designed to process large volumes of data files efficiently. It handles:
+
+- **File Discovery**: Recursively finding files matching specific patterns.
+- **Batch Processing**: Grouping records for efficient database insertion.
+- **Error Handling**: Managing failures at the record or file level without crashing the entire process.
+- **Deduplication**: Automatically checking for duplicate records based on model definitions.
+- **Checkpointing**: Resuming from where you left off if a long-running job is interrupted.
+
+## Basic Usage
+
+The pipeline requires three main components: a **Database Connection**, a **Standardizer**, and an **Ingestion Plan**.
+
+### 1. The Script
+
+Here is a complete example of a script that ingests JSONL files using a hypothetical `MyStandardizer`.
+
+```python
+import logging
+from pathlib import Path
+from smdt.store.standard_db import StandardDB
+from smdt.ingest.plan import plan_directories
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.standardizers import TwitterV2Standardizer
+
+# Configure logging to see progress and errors
+logging.basicConfig(level=logging.INFO)
+
+def main():
+    # Initialize database wrapper
+    # Note: Replace 'smdt_db' with your actual database name
+    db = StandardDB("smdt_db")
+    
+    # 2. Initialize your standardizer
+    standardizer = TwitterV2Standardizer()
+    
+    # 3. Create an ingestion plan
+    # Scans 'data/raw' for all files ending in .jsonl (recursively)
+    plan = plan_directories(
+        roots=["data/raw"],
+        include=["*.jsonl"]
+    )
+    
+    print(f"Found {len(plan.files)} files to process.")
+    
+    # 4. Configure pipeline settings (optional)
+    config = PipelineConfig(
+        batch_size=1000,       # Records per batch
+        chunk_size=50000,      # DB insert chunk size
+        checkpoint_file=".pipeline_checkpoint" # Save progress here
+    )
+    
+    # 5. Run the pipeline
+    run_pipeline(
+        plan=plan,
+        db=db,
+        standardizer=standardizer,
+        config=config
+    )
+
+if __name__ == "__main__":
+    main()
+```
+
+## Configuration Options
+
+The `PipelineConfig` class allows you to tune performance and behavior.
+
+### Processing Settings
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `batch_size` | `1000` | Number of records to accumulate in memory before flushing to the database. Larger values increase memory usage but may speed up insertion. |
+| `chunk_size` | `100000` | Maximum number of values (parameters) in a single SQL `INSERT` statement. Adjust this if you encounter DB limits. |
+| `num_workers` | `1` | Number of files to process concurrently via a process pool. `1` (the default) is the original single-process behavior. |
+
+### Parallel Ingestion
+
+If your dataset is split across many files, you can process several of them concurrently:
+
+```python
+config = PipelineConfig(
+    num_workers=8  # process up to 8 files at once
+)
+```
+
+Each worker reads, standardizes, and flushes its own file independently, with its own database connection. This is where the speedup comes from if your standardizer's per-record work is CPU-bound. `num_workers=1` is unchanged from single-process behavior, so this is purely opt-in.
+
+::: warning Deduplication is scoped per file in parallel mode
+Deduplication only happens within a single flush's buffer. In single-process mode that buffer can span many files (up to `batch_size` records); in parallel mode each worker's buffer is scoped to just its own file. A duplicate record spanning two different files will produce two rows instead of one, unless the model's table has a database-level unique constraint for `on_conflict` to catch it (true for `Accounts`/`Communities`/the `*Enrichments` tables by default, not for `Posts`/`Entities`/`Actions`).
+:::
+
+Progress reporting is also coarser in parallel mode: `flush` events are reported once per model per file, rather than streamed live at every intra-file buffer flush the way they are with `num_workers=1`.
+
+### Checkpointing
+
+Long-running ingestion jobs can be interrupted by network issues or system reboots. Checkpointing allows you to resume without re-processing completed files.
+
+```python
+config = PipelineConfig(
+    checkpoint_file="ingest_progress.txt",
+    reset_checkpoint=False  # Set to True to force processing all files again
+)
+```
+
+### Conflict Resolution
+
+By default, SMDT attempts to ignore duplicates using `ON CONFLICT DO NOTHING`. You can customize this behavior for specific models using the `on_conflict` dictionary.
+
+```python
+from smdt.store.models import Accounts
+
+config = PipelineConfig(
+    on_conflict={
+        Accounts: "UPDATE"  # Update account info if it already exists
+    }
+)
+```
+
+::: warning Note
+The "UPDATE" strategy requires that your database schema and standardizer support upserts for the given model.
+:::
+
+### File Formats & Readers
+
+The pipeline automatically selects a reader based on file extension (e.g., `.json`, `.csv`, `.tsv`). You can pass extra arguments to the underlying pandas/standard reader via `reader_kwargs`.
+
+```python
+config = PipelineConfig(
+    reader_kwargs={
+        "csv": {"sep": ";", "encoding": "latin1"} # for semicolon-separated files
+    }
+)
+```
+
+## Advanced: Archive Support
+
+The `plan_directories` function automatically detects and plans for files inside archives like `.zip` or `.tar.gz` if you enable it.
+
+```python
+plan = plan_directories(
+    roots=["data/archives"],
+    include=["**/*.zip", "**/*.tar.gz"],
+    # The pipeline handles inspecting contents inside these archives
+)
+```
+---
+description: Hash identifiers, redact free text, and handle GDPR erasure with SMDT's configurable pseudonymization pipeline. Three-layer privacy: column hashing, regex redaction, and optional Presidio PII detection.
+---
+
+# Pseudonymization
+
+SMDT provides a built-in `Pseudonymizer` to process a source database into a destination database, applying hashing to identifiers and redaction to free-text fields. The same real identifier always maps to the same pseudonym, so network graphs and cross-table joins survive the transformation intact.
+
+## Quickstart
+
+```python
+from smdt.pseudonymizer import Pseudonymizer, PseudonymizeConfig, Algorithm, DEFAULT_POLICY
+from smdt.config import PseudonymizationVariables
+
+pseudo_vars = PseudonymizationVariables()
+
+cfg = PseudonymizeConfig(
+    src_db_name="my_dataset",
+    dst_db_name="my_dataset_pseudo",
+    pepper=pseudo_vars.pepper,
+    algorithm=Algorithm.SHA256,
+    ask_reinit=True,
+    chunk_rows=5_000,
+)
+
+Pseudonymizer(cfg, DEFAULT_POLICY).run()
+```
+
+That is all you need. The default policy handles the standard SMDT schema: it hashes all identifier columns, redacts `body` and `bio` columns, blanks profile image URLs, and copies everything else unchanged.
+
+## How It Works
+
+The pseudonymizer reads from your source database and writes to a new destination database with the same schema. Each column in each table gets one of five treatments:
+
+| Action | Effect | Example |
+|---|---|---|
+| **Hash** | Replaced with a pepper-keyed SHA-256 hash | `account_id`, `username`, `post_id` |
+| **Redact** | Mentions, emails, and URLs are scrubbed | `body`, `bio` |
+| **Blank** | Set to NULL | `profile_image_url` |
+| **Drop** | Column removed entirely | Not used by default |
+| **Keep** | Copied unchanged (default) | `created_at`, `platform`, counts |
+
+## Customizing the Policy
+
+If you need different per-column rules, create a custom `PseudonymPolicy`:
+
+```python
+from smdt.pseudonymizer import PseudonymPolicy, DEFAULT_POLICY
+
+custom_policy = PseudonymPolicy(
+    hash_cols={
+        "accounts": {"account_id", "username"},
+        "posts": {"account_id", "post_id", "conversation_id"},
+    },
+    redact_cols={
+        "posts": {"body"},
+        "accounts": {"bio"},
+    },
+    blank_cols={
+        "accounts": {"profile_image_url", "location"},
+    },
+    drop_cols={},
+)
+
+Pseudonymizer(cfg, custom_policy).run()
+```
+
+When a column appears in multiple action sets, priority is: **Drop > Hash > Redact > Blank > Keep**.
+
+::: details Optional: PII Detection with Presidio
+By default, free-text redaction uses a dependency-free regex engine that catches `@mentions`, emails, and URLs. Installing the `pii` extra enables [Presidio](https://github.com/data-privacy-stack/presidio)-based detection of broader PII: phone numbers, credit cards, and personal names. This is opt-in and requires an NLP model.
+
+```bash
+pip install 'smdt[pii]'
+python -m spacy download en_core_web_lg
+```
+
+```python
+from smdt.pseudonymizer import PiiPolicy, PiiAction, PiiRule, DEFAULT_PII_POLICY
+
+pii_policy = DEFAULT_PII_POLICY  # covers accounts.bio, posts.body, communities.bio
+
+cfg = PseudonymizeConfig(
+    src_db_name="my_dataset",
+    dst_db_name="my_dataset_pseudo",
+    pepper=pseudo_vars.pepper,
+    pii_policy=pii_policy,
+    nlp_configuration={
+        "nlp_engine_name": "spacy",
+        "models": [{"lang_code": "en", "model_name": "en_core_web_lg"}],
+    },
+)
+
+Pseudonymizer(cfg, DEFAULT_POLICY).run()
+```
+
+Each entity type gets its own action: mentions are hashed for consistency with identifiers, phone numbers and credit cards become `[PHONE_NUMBER]` and `[CREDIT_CARD]`, URLs are reduced to their domain. See the `PiiPolicy` documentation for custom rules.
+:::
+
+::: details Optional: Parallel Processing
+For large tables with substantial free-text content, the CPU-bound hashing and redaction can be distributed across worker processes. Database reads and writes stay in the main process.
+
+```python
+cfg = PseudonymizeConfig(
+    src_db_name="my_dataset",
+    dst_db_name="my_dataset_pseudo",
+    pepper=pseudo_vars.pepper,
+    num_workers=8,
+    transform_chunk_size=500,
+)
+```
+:::
+
+::: details Optional: GDPR Erasure
+`Eraser` handles deletion requests by recomputing the pseudonym for a given real identity and locating their data. It supports hard deletion or in-place scrubbing across the source database, the pseudonymized database, or both.
+
+```python
+from smdt.pseudonymizer import Eraser, ErasureTarget, ErasureMode
+
+eraser = Eraser(
+    targets=[
+        ErasureTarget(db_name="my_dataset", mode=ErasureMode.DELETE,
+                      is_pseudonymized=False),
+        ErasureTarget(db_name="my_dataset_pseudo", mode=ErasureMode.SCRUB,
+                      is_pseudonymized=True),
+    ],
+    pepper=pseudo_vars.pepper,
+)
+
+report = eraser.erase("real_account_id_123", identity_column="account_id")
+```
+
+Scrubbing nulls personal columns but keeps posts in place so other users' replies and interactions are not orphaned. There is no reverse mapping table; erasure works by forward recomputation only.
+:::
+
+## Prerequisites
+
+- A database ingested with SMDT (see [Standardizing Twitter v2](./standardizing-twitter-v2.md))
+- A `PEPPER` environment variable set (the secret used for keyed hashing)
+- `PiiPolicy` users also need `pip install 'smdt[pii]'` and a spaCy model
+---
+description: Run NLP enrichment on your data with local (Ollama, Hugging Face) or hosted (OpenAI, Anthropic, Gemini) LLMs. Built-in privacy layer redacts PII before external API calls.
+---
+
+# NLP Enrichment with LLMs
+
+This recipe demonstrates how to enrich posts in your database using Large Language Models (LLMs). SMDT supports various providers including **OpenAI**, **Anthropic**, **Gemini**, **Ollama**, and **Hugging Face** via the `text_generation` enricher.
+
+## Overview
+
+The `TextGenerationEnricher` allows you to run any LLM prompt against the `body` of posts in your database and save the structured response into the `post_enrichments` table.
+
+Common use cases include:
+- Sentiment Analysis
+- Topic Classification
+- Toxicity Detection
+- Summarization
+- Entity Extraction
+
+## Prerequisites
+
+Ensure you have the necessary API keys or a local LLM server running (e.g., Ollama). If you plan to use the built-in [privacy layer](#privacy-layer-optional) with `pii_policy` (rather than just `privacy_fields` on their own), install the `pii` extra: `pip install 'smdt[pii]'`.
+
+## Configuration Reference
+
+`TextGenerationConfig` is highly configurable, but the common case (point at one of the built-in providers) only needs a `model` and an `api_key`, via a provider factory:
+
+| Factory | Provider | Pre-filled `base_url` |
+| :--- | :--- | :--- |
+| `TextGenerationConfig.for_openai(model, api_key, **kwargs)` | OpenAI | `https://api.openai.com/v1` |
+| `TextGenerationConfig.for_anthropic(model, api_key, **kwargs)` | Anthropic | `https://api.anthropic.com/v1/messages` |
+| `TextGenerationConfig.for_gemini(model, api_key, **kwargs)` | Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `TextGenerationConfig.for_ollama(model, base_url="http://localhost:11434/v1", **kwargs)` | Ollama (local) | as given, defaults to local |
+
+Every other field is passed through `**kwargs` and is identical to constructing `TextGenerationConfig(...)` directly. There is no factory for Hugging Face Inference Endpoints (`provider_kind="hf-text"`) since each one has its own endpoint URL rather than one shared host. Construct `TextGenerationConfig(...)` directly for that case (see the [example below](#5-hugging-face-inference-endpoints)).
+
+### Prompting
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| **`user_template`** | *Summary prompt* | The prompt sent to the model. Use `{body}` as a placeholder for the post content. |
+| **`system_prompt`** | *"You are a helpful assistant."* | The system instruction that sets the behavior context for the model. |
+| **`temperature`** | `0.2` | Controls randomness (0.0=deterministic, 1.0=creative). Lower values are better for classification. |
+| **`max_tokens`** | `None` | Max number of tokens to generate. |
+| **`prompt_path`** | `None` | Path to a YAML/JSON file containing prompts (advanced usage). |
+
+### Execution & Performance
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| **`batch_size`** | `32` | Number of posts to fetch from the database at once. Lower this for large local models. |
+| **`requests_per_minute`** | `120` | Client-side rate limiting to avoid hitting API caps. |
+| **`only_missing`** | `True` | If `True`, skips posts that already have an enrichment entry for this `model_id`. Set to `False` to re-process everything. |
+| **`reset_cache`** | `False` | If `True`, clears internal caches before starting. |
+
+### Output
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| **`do_save_to_db`** | `True` | Whether to save results to the `post_enrichments` table. |
+| **`output_dir`** | `None` | If `do_save_to_db=False`, results are written to JSONL files in this directory. |
+
+### Privacy layer and preprocessing
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| **`privacy_fields`** | `[]` | Row fields to redact/hash before they're sent anywhere, e.g. `["body"]`. Empty means the privacy layer is off. |
+| **`pii_policy`** | `None` | Optional `PiiPolicy` for Presidio-based PII detection (phone numbers, emails, names, ...) on `privacy_fields`. Without one, `privacy_fields` still get baseline mention/email/URL redaction. |
+| **`pepper`** | `None` | Secret pepper for the hasher. Required once `privacy_fields` is non-empty. |
+| **`preprocessors`** | `[]` | Your own list of row-transform functions, applied after the privacy layer and before the LLM sees the row (e.g. to clean up artifacts the privacy layer left behind). |
+
+See [Privacy Layer](#privacy-layer-optional) below for a full example.
+
+## Provider Examples
+
+### 1. OpenAI
+
+```python
+import os
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+from smdt.enrichers.text_generation import TextGenerationConfig
+
+db = StandardDB(db_name="my_local_db")
+
+config = TextGenerationConfig.for_openai(
+    model="gpt-4o-mini",
+    api_key=os.environ["OPENAI_API_KEY"],
+    model_id_postfix="v1_sentiment",  # Saved as: text_generation_v1_sentiment
+    system_prompt="You are an expert sentiment analyst.",
+    user_template=(
+        "Classify the sentiment of the following social media post as "
+        "POSITIVE, NEGATIVE, or NEUTRAL. Return only the class label.\n\n"
+        "Post: {body}"
+    ),
+    temperature=0.0,
+    batch_size=20,
+    requests_per_minute=60,
+    only_missing=True,
+)
+
+print("Starting Text Generation Enricher (OpenAI)...")
+run_enricher("text_generation", db=db, config=config)
+print("Enrichment complete.")
+```
+
+### 2. Anthropic (Claude)
+
+```python
+import os
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+from smdt.enrichers.text_generation import TextGenerationConfig
+
+db = StandardDB(db_name="my_local_db")
+
+config = TextGenerationConfig.for_anthropic(
+    model="claude-3-5-sonnet-20241022",
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    model_id_postfix="v1_sentiment_claude",
+    system_prompt="You are a helpful assistant.",
+    user_template="Analyze the sentiment of this post: {body}",
+    only_missing=True,
+    batch_size=10,
+    reset_cache=True,
+    max_tokens=1000,
+)
+
+print("Starting Text Generation Enricher (Anthropic)...")
+run_enricher("text_generation", db=db, config=config)
+print("Enrichment complete.")
+```
+
+### 3. Gemini
+
+```python
+import os
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+from smdt.enrichers.text_generation import TextGenerationConfig
+
+db = StandardDB(db_name="my_local_db")
+
+config = TextGenerationConfig.for_gemini(
+    model="gemini-1.5-pro",
+    api_key=os.environ["GEMINI_API_KEY"],
+    model_id_postfix="v1_sentiment_gemini",
+    system_prompt="You are a helpful assistant.",
+    user_template="Analyze the sentiment of this post: {body}",
+    only_missing=True,
+    batch_size=10,
+)
+
+print("Starting Text Generation Enricher (Gemini)...")
+run_enricher("text_generation", db=db, config=config)
+print("Enrichment complete.")
+```
+
+### 4. Local LLM with Ollama
+
+You can use a locally running Ollama instance to save costs and keep data private (no `api_key` needed).
+
+```python
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+from smdt.enrichers.text_generation import TextGenerationConfig
+
+db = StandardDB(db_name="my_local_db")
+
+config = TextGenerationConfig.for_ollama(
+    model="llama3",
+    model_id_postfix="llama3_topic",
+    system_prompt="You are a helpful classifier.",
+    user_template="Identify the main topic of this text: {body}",
+    batch_size=5,  # Lower batch size for local inference
+    only_missing=True,
+)
+
+print("Starting Local Enrichment (Ollama)...")
+run_enricher("text_generation", db=db, config=config)
+print("Done.")
+```
+
+### 5. Hugging Face Inference Endpoints
+
+Each Hugging Face Inference Endpoint has its own URL, so there is no `for_hf_text` factory. Construct `TextGenerationConfig` directly with `provider_kind="hf-text"`.
+
+```python
+import os
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+from smdt.enrichers.text_generation import TextGenerationConfig
+
+db = StandardDB(db_name="my_local_db")
+
+config = TextGenerationConfig(
+    provider_kind="hf-text",
+    chat_model_id="meta-llama/Llama-2-7b-chat-hf",
+    base_url="https://api-inference.huggingface.co/models/meta-llama/Llama-2-7b-chat-hf",
+    api_key=os.environ["HF_API_KEY"],
+    model_id_postfix="hf_classification",
+    system_prompt="You are a helpful classifier.",
+    user_template="Identify the main topic of this text: {body}",
+    only_missing=True,
+)
+
+print("Starting Text Generation Enricher (Hugging Face)...")
+run_enricher("text_generation", db=db, config=config)
+print("Enrichment complete.")
+```
+
+## Privacy layer (optional)
+
+Server-backed enrichers like `text_generation` send `body` to a third-party API by default. `privacy_fields`/`pii_policy` enable a built-in redaction/hashing layer (reusing `smdt.pseudonymizer`) that runs before anything leaves the machine:
+
+```python
+import os
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+from smdt.enrichers.text_generation import TextGenerationConfig
+from smdt.pseudonymizer.pii_policy import DEFAULT_PII_POLICY
+
+db = StandardDB(db_name="my_local_db")
+
+config = TextGenerationConfig.for_anthropic(
+    model="claude-3-5-sonnet-20241022",
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    model_id_postfix="v1_sentiment_claude",
+    system_prompt="You are a helpful assistant.",
+    user_template="Analyze the sentiment of this post: {body}",
+    only_missing=True,
+    batch_size=10,
+    # Privacy layer: mentions, emails, phone numbers, and names in
+    # "body" are redacted or hashed before the row leaves the machine.
+    privacy_fields=["body"],
+    pii_policy=DEFAULT_PII_POLICY,
+    pepper=os.environ["PSEUDONYMIZATION_PEPPER"].encode(),
+)
+
+run_enricher("text_generation", db=db, config=config)
+```
+
+If `base_url` points at a known commercial API host (OpenAI, Anthropic, Gemini, or the Hugging Face Inference API) and `privacy_fields` is left empty, SMDT logs a warning so this isn't a silent default. Without a `pii_policy`, `privacy_fields` still get baseline mention/email/URL redaction via the dependency-free `Redactor`; `pii_policy` (e.g. `DEFAULT_PII_POLICY`) upgrades this to Presidio-based detection covering phone numbers, credit cards, and person names.
+
+Need to clean something up afterward, like leftover formatting artifacts the redaction pass introduces? Add your own `preprocessors=[...]`. It runs after the privacy layer and before the LLM sees the row.
+
+## Viewing Results
+
+The method for retrieving results depends on your `do_save_to_db` setting.
+
+### Option A: Database Storage (`do_save_to_db=True`)
+
+This is the default. Results are stored in the `post_enrichments` table, with the LLM's response under the `text` key. You can query them using SQL:
+
+```sql
+SELECT 
+    p.body AS original_text, 
+    pe.body ->> 'text' AS llm_response 
+FROM posts p
+JOIN post_enrichments pe ON p.post_id = pe.post_id
+WHERE pe.model_id = 'text_generation_v1_sentiment'
+LIMIT 10;
+```
+
+Or using Python:
+
+```python
+from smdt.store.standard_db import StandardDB
+
+db = StandardDB("my_local_db", initialize=False)
+conn = db.connect()
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT body ->> 'text' 
+            FROM post_enrichments 
+            WHERE model_id = %s 
+            LIMIT 5
+            """,
+            ("text_generation_v1_sentiment",)
+        )
+        for row in cur.fetchall():
+            print(f"Result: {row[0]}")
+finally:
+    conn.close()
+```
+
+### Option B: Local File Storage (`do_save_to_db=False`)
+
+If you set `do_save_to_db=False`, the enricher writes results to JSONL files in the directory specified by `output_dir`.
+
+The files are named following the pattern `{model_id}_{date}.jsonl`.
+
+```python
+import json
+import glob
+import os
+
+# The directory you specified in your config
+output_dir_path = "./my_llm_outputs" 
+
+# Find all JSONL files
+files = glob.glob(os.path.join(output_dir_path, "*.jsonl"))
+
+for filepath in files:
+    print(f"Reading {filepath}...")
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            record = json.loads(line)
+            post_id = record["post_id"]
+
+            # The actual LLM output is inside the 'body' dictionary
+            llm_text = record["body"]["text"] 
+            
+            print(f"[{post_id}] {llm_text}")
+```
+---
+description: Build a custom enricher from scratch in SMDT. Step-by-step tutorial covering fetch, preprocess, process, and save — with a complete, runnable example.
+---
+
+# Building a Custom Enricher
+
+This recipe walks through writing your own enricher from scratch: a `WordCountEnricher` that writes `{"word_count": int, "char_count": int}` for every post. It builds the class one method at a time, then shows the complete file, how to register and run it, and how to test it.
+
+## The Contract
+
+Every enricher subclasses `BaseEnricher` and implements four abstract methods:
+
+| Method | Responsibility |
+| :--- | :--- |
+| `total_count()` | How many rows are left to process (or `None` if unknown). |
+| `fetch_batch(offset, limit)` | Read one batch of rows to enrich. |
+| `process_batch(rows)` | Do the actual enrichment; return result dicts. |
+| `save_results(results)` | Persist results (DB or JSONL). |
+
+`setup()`, `load_model()`, and `teardown()` are optional lifecycle hooks (no-ops by default) for opening connections, loading a model, or cleanup.
+
+In exchange, `BaseEnricher.run()` gives you, for free, without writing any code for them:
+
+- Batched iteration with a progress bar
+- The `only_missing`/`reset_cache` resumable-run cache
+- The [privacy layer](/recipes/enrichment/nlp#privacy-layer-optional) (`privacy_fields`/`pii_policy`) and the `preprocessors` pipeline, applied to every batch before `process_batch` ever sees it
+- `do_save_to_db=False` → JSONL file output, handled the same way for every enricher
+
+You never call any of this directly -- just implement the four methods and configure behavior through your config class.
+
+## Step 1: Define Your Config
+
+Every enricher's config subclasses `EnricherRunConfig`, which already provides `only_missing`, `reset_cache`, `cache_dir`, `do_save_to_db`, `output_dir`, `privacy_fields`, `pii_policy`, `pepper`, and `preprocessors`. Add only what's specific to your enricher:
+
+```python
+from dataclasses import dataclass
+from typing import Optional
+from smdt.enrichers.base import EnricherRunConfig
+
+
+@dataclass
+class WordCountConfig(EnricherRunConfig):
+    """Configuration for WordCountEnricher.
+
+    Attributes:
+        model_id_postfix: Optional suffix appended to form the
+            ``post_enrichments.model_id`` key (``"word_count_<postfix>"``).
+    """
+    model_id_postfix: Optional[str] = None
+```
+
+## Step 2: `__init__`
+
+Every enricher's `__init__` follows the same four-line pattern: call the parent constructor, coerce the config, build `model_id`, and initialize the cache.
+
+```python
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+from smdt.enrichers.base import BaseEnricher
+from smdt.store.standard_db import StandardDB
+
+
+class WordCountEnricher(BaseEnricher):
+    def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
+        super().__init__(db)
+        self.cfg = self._coerce_config(config, WordCountConfig)
+        self.model_id = self._make_model_id(self.cfg.model_id_postfix)
+        self.applied_datetime = datetime.now(timezone.utc)
+        self._init_cache()
+```
+
+`_coerce_config` accepts a ready `WordCountConfig` instance, a plain dict, or `None`. `_make_model_id` builds the value that ends up in `post_enrichments.model_id` -- just `"word_count"` here, or `"word_count_<postfix>"` if you set `model_id_postfix`.
+
+## Step 3: `total_count` and `fetch_batch`
+
+These read from the database. Respect `self.cfg.only_missing` so re-running the enricher skips posts it already scored:
+
+```python
+from typing import Any, Dict, List
+
+
+def total_count(self) -> int:
+    where = ["p.body IS NOT NULL", "p.body <> ''"]
+    params: List[Any] = []
+    if self.cfg.only_missing:
+        where.append(
+            "NOT EXISTS (SELECT 1 FROM post_enrichments pe "
+            "WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+        )
+        params.append(self.model_id)
+    q = f"SELECT COUNT(*) FROM posts p WHERE {' AND '.join(where)}"
+    conn = self.db.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(q, params)
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
+def fetch_batch(self, offset: int, limit: int) -> List[Dict[str, Any]]:
+    where = ["p.body IS NOT NULL", "p.body <> ''"]
+    params: List[Any] = []
+    if self.cfg.only_missing:
+        where.append(
+            "NOT EXISTS (SELECT 1 FROM post_enrichments pe "
+            "WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+        )
+        params.append(self.model_id)
+    q = (
+        f"SELECT p.post_id, p.body, created_at, retrieved_at FROM posts p "
+        f"WHERE {' AND '.join(where)} ORDER BY p.id OFFSET %s LIMIT %s"
+    )
+    params.extend([offset, limit])
+    conn = self.db.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(q, params)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+```
+
+`fetch_batch` returns plain dicts, keyed by column name -- this is the shape `process_batch`, the privacy layer, and `preprocessors` all operate on.
+
+## Step 4: `process_batch`
+
+This is the only method with logic specific to *this* enricher. It receives rows that have already been through the privacy layer and any configured `preprocessors`:
+
+```python
+def process_batch(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for r in rows:
+        body = r.get("body") or ""
+        out.append(
+            {
+                "created_at": r.get("created_at"),
+                "post_id": r["post_id"],
+                "model_id": self.model_id,
+                "body": {"word_count": len(body.split()), "char_count": len(body)},
+            }
+        )
+    return out
+```
+
+The returned `"body"` key is what becomes the JSONB payload in `post_enrichments.body` -- it can be any JSON-serializable dict, shaped however your enricher needs.
+
+## Step 5: `save_results`
+
+Support both output modes so your enricher works whether or not the caller wants database writes:
+
+```python
+import json
+from pathlib import Path
+from smdt.store.models import PostEnrichments
+
+
+def save_results(self, results: List[Dict[str, Any]]) -> None:
+    if not results:
+        return
+    if self.cfg.do_save_to_db:
+        objs = [
+            PostEnrichments(
+                created_at=r["created_at"],
+                retrieved_at=self.applied_datetime,
+                post_id=r["post_id"],
+                model_id=r["model_id"],
+                body=r["body"],
+            )
+            for r in results
+        ]
+        self.db.insert_with_fallbacks(objs)
+    else:
+        output_base = Path(self.cfg.output_dir)
+        output_base.mkdir(parents=True, exist_ok=True)
+        outp = output_base / f"{self.model_id}.jsonl"
+        with outp.open("a", encoding="utf-8") as f:
+            for r in results:
+                f.write(
+                    json.dumps(
+                        {"post_id": r["post_id"], "model_id": r["model_id"], "body": r["body"]},
+                        default=str,
+                    )
+                    + "\n"
+                )
+```
+
+## Putting It All Together
+
+```python
+from __future__ import annotations
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+import json
+
+from smdt.enrichers.base import BaseEnricher, EnricherRunConfig
+from smdt.enrichers.registry import register
+from smdt.store.models import PostEnrichments
+from smdt.store.standard_db import StandardDB
+
+
+@dataclass
+class WordCountConfig(EnricherRunConfig):
+    """Configuration for WordCountEnricher.
+
+    Attributes:
+        model_id_postfix: Optional suffix appended to form the
+            ``post_enrichments.model_id`` key (``"word_count_<postfix>"``).
+    """
+    model_id_postfix: Optional[str] = None
+
+
+@register(
+    "word_count",
+    target="posts",
+    description="Counts words and characters in post bodies",
+)
+class WordCountEnricher(BaseEnricher):
+    """Writes ``{"word_count": int, "char_count": int}`` per post."""
+
+    def __init__(self, db: StandardDB, *, config: Optional[Dict[str, Any]] = None):
+        super().__init__(db)
+        self.cfg = self._coerce_config(config, WordCountConfig)
+        self.model_id = self._make_model_id(self.cfg.model_id_postfix)
+        self.applied_datetime = datetime.now(timezone.utc)
+        self._init_cache()
+
+    def total_count(self) -> int:
+        where = ["p.body IS NOT NULL", "p.body <> ''"]
+        params: List[Any] = []
+        if self.cfg.only_missing:
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe "
+                "WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.model_id)
+        q = f"SELECT COUNT(*) FROM posts p WHERE {' AND '.join(where)}"
+        conn = self.db.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(q, params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+        finally:
+            conn.close()
+
+    def fetch_batch(self, offset: int, limit: int) -> List[Dict[str, Any]]:
+        where = ["p.body IS NOT NULL", "p.body <> ''"]
+        params: List[Any] = []
+        if self.cfg.only_missing:
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM post_enrichments pe "
+                "WHERE pe.post_id::text = p.post_id::text AND pe.model_id = %s)"
+            )
+            params.append(self.model_id)
+        q = (
+            f"SELECT p.post_id, p.body, created_at, retrieved_at FROM posts p "
+            f"WHERE {' AND '.join(where)} ORDER BY p.id OFFSET %s LIMIT %s"
+        )
+        params.extend([offset, limit])
+        conn = self.db.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(q, params)
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, r)) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def process_batch(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out = []
+        for r in rows:
+            body = r.get("body") or ""
+            out.append(
+                {
+                    "created_at": r.get("created_at"),
+                    "post_id": r["post_id"],
+                    "model_id": self.model_id,
+                    "body": {"word_count": len(body.split()), "char_count": len(body)},
+                }
+            )
+        return out
+
+    def save_results(self, results: List[Dict[str, Any]]) -> None:
+        if not results:
+            return
+        if self.cfg.do_save_to_db:
+            objs = [
+                PostEnrichments(
+                    created_at=r["created_at"],
+                    retrieved_at=self.applied_datetime,
+                    post_id=r["post_id"],
+                    model_id=r["model_id"],
+                    body=r["body"],
+                )
+                for r in results
+            ]
+            self.db.insert_with_fallbacks(objs)
+        else:
+            output_base = Path(self.cfg.output_dir)
+            output_base.mkdir(parents=True, exist_ok=True)
+            outp = output_base / f"{self.model_id}.jsonl"
+            with outp.open("a", encoding="utf-8") as f:
+                for r in results:
+                    f.write(
+                        json.dumps(
+                            {"post_id": r["post_id"], "model_id": r["model_id"], "body": r["body"]},
+                            default=str,
+                        )
+                        + "\n"
+                    )
+```
+
+Save this as `word_count_enricher.py`. The `@register(...)` decorator runs at import time, so importing this module is enough to make `"word_count"` available to `run_enricher`.
+
+## Step 6: Register and Run
+
+```python
+from smdt.store.standard_db import StandardDB
+from smdt.enrichers.runner import run_enricher
+import word_count_enricher  # noqa: F401 -- import triggers @register
+
+db = StandardDB(db_name="my_local_db")
+run_enricher("word_count", db=db)
+```
+
+`run_enricher` also accepts the class directly (`run_enricher(word_count_enricher.WordCountEnricher, db=db)`), which works even for an enricher you haven't registered.
+
+Because `WordCountConfig` inherits from `EnricherRunConfig`, the privacy layer and `preprocessors` work immediately, with no extra code in `WordCountEnricher` itself:
+
+```python
+run_enricher(
+    "word_count",
+    db=db,
+    config=WordCountConfig(
+        privacy_fields=["body"],
+        pepper=b"...",
+    ),
+)
+```
+
+## Step 7: Test It
+
+`fetch_batch`/`total_count`/`save_results` all just need a `MagicMock` database; `process_batch` needs nothing at all, since it's pure logic on plain dicts:
+
+```python
+from unittest.mock import MagicMock
+from word_count_enricher import WordCountConfig, WordCountEnricher
+
+
+def test_process_batch_counts_words_and_chars():
+    db = MagicMock()
+    e = WordCountEnricher(db, config=WordCountConfig())
+    rows = [{"post_id": "p1", "body": "hello world", "created_at": None}]
+    results = e.process_batch(rows)
+    assert results == [
+        {
+            "created_at": None,
+            "post_id": "p1",
+            "model_id": "word_count",
+            "body": {"word_count": 2, "char_count": 11},
+        }
+    ]
+
+
+def test_model_id_includes_postfix():
+    db = MagicMock()
+    e = WordCountEnricher(db, config=WordCountConfig(model_id_postfix="v1"))
+    assert e.model_id == "word_count_v1"
+```
+
+## Bonus: Enriching Accounts Instead of Posts
+
+Everything above targets `posts`. To write an account-level enricher instead:
+
+- Pass `target="accounts"` to `@register(...)`.
+- Read from the `accounts` table instead of `posts` in `fetch_batch`/`total_count`.
+- Use `AccountEnrichments` (with `account_id` instead of `post_id`) in `save_results`.
+
+`bot_detection.py` (`BotDetectionEnricher`) is a real, complete example of an account-level enricher if you want to see the full pattern.
+---
+description: Map a new, unsupported data source into SMDT's schema by implementing a custom standardizer. Complete runnable example using a CSV dataset.
+---
+
+# Building a Custom Standardizer
+
+This recipe guides you through creating a custom standardizer to ingest data from a new source format (e.g., a custom CSV or JSON) into the SMDT database.
+
+## Overview
+
+All standardizers in SMDT inherit from the base `Standardizer` class. Your job is to implement the `standardize` method, which takes a raw record and converts it into a list of database models (like `Accounts`, `Posts`, `Actions`, etc.).
+
+Once your standardizer is defined, you can plug it directly into the standard SMDT ingestion pipeline, and it will handle the reading, batching, and database insertion automatically.
+
+## End-to-End Example
+
+Below is a complete, runnable script. It defines a custom standardizer for a hypothetical CSV format, generates a dummy CSV file, and then runs the full SMDT pipeline to ingest the data into a database.
+
+Create a file named `custom_ingestion.py` and run it:
+
+```python
+import os
+import csv
+from datetime import datetime, timezone
+from typing import Any, Iterable, Tuple
+
+from smdt.standardizers.base import Standardizer, SourceInfo
+from smdt.store.models import Accounts, Posts
+from smdt.store.standard_db import StandardDB
+from smdt.ingest.plan import plan_directories
+from smdt.ingest.pipeline import run_pipeline, PipelineConfig
+from smdt.io.readers import discover
+
+# ---------------------------------------------------------
+# 1. Define the Custom Standardizer
+# ---------------------------------------------------------
+class MyCustomCSVStandardizer(Standardizer):
+    """
+    A custom standardizer that maps our specific CSV columns 
+    (user_id, username, tweet_text, timestamp, likes) to SMDT models.
+    """
+    name = "my_custom_csv_standardizer"
+
+    def standardize(
+        self, input_record: Tuple[dict, SourceInfo]
+    ) -> Iterable[Any]:
+        
+        record, source_info = input_record
+        output_models = []
+
+        # Extract data from the CSV row (which is passed as a dictionary)
+        user_id = record.get("user_id")
+        username = record.get("username")
+        body = record.get("tweet_text")
+        
+        # We generate a unique post_id since our CSV doesn't have one
+        post_id = f"{user_id}_{record.get('timestamp')}" 
+
+        # Parse the timestamp into a timezone-aware UTC datetime
+        try:
+            dt_str = record.get("timestamp")
+            created_at = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            # Skip records with invalid dates
+            return []
+
+        # Create the Account model
+        account = Accounts(
+            account_id=user_id,
+            username=username,
+            created_at=created_at, 
+            profile_name=username, 
+            retrieved_at=datetime.now(timezone.utc)
+        )
+        output_models.append(account)
+
+        # Create the Post model
+        post = Posts(
+            post_id=post_id,
+            account_id=user_id,
+            body=body,
+            created_at=created_at,
+            like_count=int(record.get("likes", 0)),
+            retrieved_at=datetime.now(timezone.utc)
+        )
+        output_models.append(post)
+
+        return output_models
+
+# ---------------------------------------------------------
+# 2. Setup and Run the Pipeline
+# ---------------------------------------------------------
+def main():
+    # Ensure SMDT knows how to read various file formats (like CSV)
+    discover()
+
+    # Create a dummy CSV file for this example
+    csv_filename = "custom_data.csv"
+    with open(csv_filename, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["user_id", "username", "tweet_text", "timestamp", "likes"])
+        writer.writerow(["u123", "alice", "Hello Custom World!", "2023-10-27 10:00:00", "5"])
+        writer.writerow(["u456", "bob", "SMDT is flexible", "2023-10-27 11:30:00", "10"])
+
+    print(f"Generated sample data: {csv_filename}")
+
+    # Initialize the Database
+    # initialize=True creates the necessary tables if they don't exist, with
+    # default hypertable tuning (chunk interval, space partitioning,
+    # compression) -- pass hypertable_config=... to customize for a
+    # different dataset volume/shape; see the tip in
+    # standardizing-twitter-v2.md's "Run the Standardization" step.
+    db = StandardDB("custom_smdt_db", initialize=True)
+
+    # Initialize our Custom Standardizer
+    standardizer = MyCustomCSVStandardizer()
+
+    # Create an ingestion plan targeting our CSV file
+    current_dir = os.path.dirname(os.path.abspath(__file__)) or "."
+    plan = plan_directories(
+        roots=[current_dir],
+        include=[csv_filename]
+    )
+
+    print(f"Found {len(plan.files)} file(s) to process. Starting ingestion...")
+
+    # Run the pipeline
+    run_pipeline(
+        plan=plan,
+        db=db,
+        standardizer=standardizer,
+        config=PipelineConfig(
+            batch_size=100,
+            # We use DO NOTHING to prevent errors if we run the script multiple times
+            on_conflict={
+                Accounts: "DO NOTHING",
+                Posts: "DO NOTHING"
+            }
+        )
+    )
+
+    print("Ingestion complete! Check your database.")
+
+if __name__ == "__main__":
+    main()
+```
+
+## How It Works
+
+1. **`standardize()` Method**: The pipeline reads the file (e.g., via the built-in CSV reader) and passes each row to your standardizer as a dictionary. 
+2. **Data Extraction**: You extract the fields, parse strings into proper `datetime` objects, and handle missing data.
+3. **Model Instantiation**: You instantiate SMDT models (`Accounts`, `Posts`) and return them in a list.
+4. **Pipeline Execution**: The `run_pipeline` function takes care of batching your returned models, deduplicating them, and safely inserting them into the PostgreSQL database using `StandardDB`.
+---
+description: Sanity-check your ingested data with SMDT's database inspector: row counts, per-column completeness, and enum distributions before relying on the data.
+---
+
+# Using the Database Inspector
+
+SMDT includes a built-in `Inspector` tool to help you visualize the contents and quality of your database. It provides a terminal-friendly report showing:
+
+- **Completeness**: How many rows have non-null values for each column.
+- **Enumerations**: Distributions of values for categorical fields (like `action_type`).
+- **Row Counts**: Estimated or exact row counts for each table.
+- **Structured Output**: Every report is also saved as a JSON snapshot by default, for later comparison.
+
+This is particularly useful for verifying data ingestion pipelines or exploring a new dataset.
+
+## Basic Usage
+
+The inspector is typically used via a script or an interactive Python session.
+
+### Running a Report
+
+Here's how to generate a report for your default database:
+
+```python
+import os
+from smdt.store.standard_db import StandardDB
+from smdt.inspector import Inspector, report_schemas
+
+def main():
+    # 1. Connect to your database
+    db_name = os.getenv("DEFAULT_DB_NAME", "smdt_db")
+    db = StandardDB(db_name, initialize=False)
+
+    # 2. Create an Inspector instance
+    # You can inspect the 'public' schema or any other schema you use
+    inspector = Inspector(db, schema="public")
+
+    # 3. Generate the report
+    # report_schemas prints to stdout AND writes a JSON snapshot to
+    # inspector_snapshots/ by default -- see "Saving Structured Output" below
+    print(f"Inspecting database: {db_name} (public schema)\n")
+    
+    # Pass a list of inspectors to compare multiple DBs or schemas if needed
+    report_schemas([inspector])
+
+if __name__ == "__main__":
+    main()
+```
+
+## Comparisons
+
+The `report_schemas` function accepts a list of inspectors, allowing you to compare two databases side-by-side. This is excellent for checking if a migration or backup was successful.
+
+```python
+# Compare Prod vs Dev
+prod_db = StandardDB("production_db", initialize=False)
+dev_db = StandardDB("development_db", initialize=False)
+
+insp_prod = Inspector(prod_db, schema="public")
+insp_dev = Inspector(dev_db, schema="public")
+
+# The report will show columns for both databases side-by-side
+report_schemas([insp_prod, insp_dev])
+```
+
+### Comparing the Same Time Period Across Databases
+
+Combine `time_window` with the multi-inspector comparison above to compare
+the *same* time slice across several databases -- e.g. how January 2023
+looked across different platform datasets:
+
+```python
+from datetime import datetime, timezone
+
+jan_2023 = (datetime(2023, 1, 1, tzinfo=timezone.utc), datetime(2023, 2, 1, tzinfo=timezone.utc))
+
+insp_twitter = Inspector(twitter_db, schema="public", time_window=jan_2023)
+insp_bluesky = Inspector(bluesky_db, schema="public", time_window=jan_2023)
+
+report_schemas([insp_twitter, insp_bluesky], only_tables=["posts"])
+```
+
+Each inspector filters to `created_at >= start AND created_at < end` for
+any table that has a `created_at` column (tables without one are
+unaffected). This stays cheap even on a huge table: TimescaleDB's chunk
+exclusion means a narrow window only touches the chunks that overlap it,
+regardless of total table size. The comparison header shows the window
+next to each database's label so it's clear what's being compared.
+
+## Filtering
+
+If you only want to inspect specific tables, you can filter the output to reduce noise.
+
+```python
+# Only inspect the 'posts' and 'accounts' tables
+report_schemas(
+    [inspector], 
+    only_tables=["posts", "accounts"]
+)
+```
+
+## Large Tables: Sampled Mode
+
+By default, `Inspector` computes exact completeness/enum stats with a full
+table scan -- correct, but slow on a large hypertable (measured: 18+ seconds
+for a single 64M-row table). For a quick look at a large dataset, sample
+instead:
+
+```python
+inspector = Inspector(db, schema="public", sample_pct=1.0)  # sample ~1% of rows
+```
+
+This uses `TABLESAMPLE SYSTEM` for completeness/enum queries and the
+database's own row-count estimate instead of an exact `COUNT(*)` --
+percentages stay statistically reliable, but the table is now marked
+`(sampled estimate)` in the report so it's clear the absolute counts are
+extrapolated, not exact. Leave `sample_pct` unset (the default) when you
+need exact numbers, e.g. verifying a migration.
+
+## Saving Structured Output
+
+`report_schemas` doesn't just print to the terminal -- by default it also
+writes one JSON snapshot file per inspector to `inspector_snapshots/`
+(created automatically), named after that inspector's db/schema (and its
+`time_window`/`sample_pct` if set, so different comparisons don't collide
+on the same file):
+
+```python
+report_schemas([insp_prod, insp_dev])
+# -> inspector_snapshots/production_db__public.json
+# -> inspector_snapshots/development_db__public.json
+```
+
+Load one back later -- the reconstructed data is usable exactly like a live
+snapshot (same `TableStat`/`ColStat` objects, `enum_counts` included):
+
+```python
+from smdt.inspector import load_snapshot
+
+metadata, snap = load_snapshot("inspector_snapshots/production_db__public.json")
+print(metadata["timestamp"], metadata["sample_pct"], metadata["time_window"])
+print(snap["posts"].est_rows, snap["posts"].columns["body"].completeness)
+```
+
+`metadata` records the settings the snapshot was taken with (`db_name`,
+`schema`, `sample_pct`, `time_window`) so a loaded snapshot is never
+ambiguous about what it actually measured.
+
+To change where files go, or skip saving entirely:
+
+```python
+report_schemas([inspector], save_dir="my_snapshots")  # different directory
+report_schemas([inspector], save=False)               # print only, no files
+```
+
+If you want a snapshot without going through `report_schemas` at all (e.g.
+in a script with no printed report), `Inspector.snapshot_and_save(path)` or
+the module-level `save_snapshot(inspector, snap, path)` save to an exact
+path of your choosing; `snapshot()` on its own still returns an in-memory
+result with no file I/O.
+
+## Understanding the Output
+
+The output uses color-coding to highlight data quality:
+
+- **Green**: High completeness (>80%).
+- **Yellow**: Medium completeness (20-80%).
+- **Red**: Low completeness (<20%).
+
+For `ENUM` columns (like `action_type` or `community_type`), the report will automatically show a breakdown of the top values and their percentages.
+
+### Example Output
+
+```text
+Table: actions (~1,250 rows)
+--------------------------------------------------
+column / type        |          public          |
+--------------------------------------------------
+action_id : uuid     | 1,250/1,250 (100.0%)     |
+action_type : text   | 1,250/1,250 (100.0%)     |
+  ↳ RETWEET          |    850 (68.0%)           |
+  ↳ REPLY            |    300 (24.0%)           |
+  ↳ QUOTE            |    100 ( 8.0%)           |
+created_at : timest..| 1,250/1,250 (100.0%)     |
+body : text          |    400/1,250 ( 32.0%)    |
+...
+```
+---
+description: Query across multiple SMDT databases with plain SQL using MultiStore. Attach per-dataset Postgres databases into one DuckDB connection and join or union across platforms.
+---
+
+# Cross-Platform Analysis with MultiStore
+
+SMDT stores every dataset in its own Postgres database. That's great for isolation, but if you have a `twitter_db` and a `bluesky_db` and want to compare accounts, posts, or networks across them, you need a way to query more than one database at once.
+
+`MultiStore` attaches multiple SMDT-standardized databases into one [DuckDB](https://duckdb.org/) connection, so you can write ordinary SQL joins and unions across them. This works cleanly because every SMDT dataset shares the exact same schema (`accounts`, `posts`, `entities`, `actions`, ...) regardless of platform -- see the project README's Data Model section for the full column list per table.
+
+## Basic Usage
+
+```python
+from smdt.multistore import MultiStore
+
+with MultiStore() as ms:
+    ms.attach("twitter", db_name="twitter_db")
+    ms.attach("bluesky", db_name="bluesky_db")
+
+    # Each attached dataset shows up as a schema, named after its alias.
+    df = ms.query("""
+        SELECT tw.username, tw.follower_count AS tw_followers, bs.follower_count AS bs_followers
+        FROM twitter.accounts tw
+        JOIN bluesky.accounts bs ON tw.username = bs.username
+    """)
+    print(df)
+```
+
+`attach()` reuses `DBConfig` (the same connection settings `StandardDB` uses), so by default it reads `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_PORT` from your environment. Pass `cfg=DBConfig(...)` explicitly if different datasets live on different hosts or credentials:
+
+```python
+from smdt.config import DBConfig
+from smdt.multistore import MultiStore
+
+ms = MultiStore()
+ms.attach("twitter", db_name="twitter_db", cfg=DBConfig(host="db1.internal", user="researcher", password="..."))
+ms.attach("bluesky", db_name="bluesky_db", cfg=DBConfig(host="db2.internal", user="researcher", password="..."))
+```
+
+`MultiStore` attaches everything **read-only** by default -- it's for cross-dataset analysis, not writes. Writes belong to each dataset's own `StandardDB`.
+
+## Combining Datasets
+
+Because every dataset shares the same schema, a common pattern is unioning the same table across datasets rather than joining:
+
+```python
+df = ms.query("""
+    SELECT platform, body FROM twitter.posts
+    UNION ALL
+    SELECT platform, body FROM bluesky.posts
+""")
+```
+
+Since `posts.platform` is already set per-row during standardization, you don't need to track which dataset a row came from separately -- it's already in the data.
+
+## Cross-Platform Identity Linking
+
+`MultiStore` doesn't attempt to automatically match an account on one platform to an account on another -- that's a research decision, not infrastructure. Whatever matching signal you have (exact `username` match, a manually curated crosswalk table, a fuzzy-matching result you've computed separately) is just another join condition:
+
+```python
+# Exact match
+df = ms.query("""
+    SELECT tw.account_id AS twitter_id, bs.account_id AS bluesky_id
+    FROM twitter.accounts tw
+    JOIN bluesky.accounts bs ON lower(tw.username) = lower(bs.username)
+""")
+
+# Using a crosswalk table you've loaded separately (e.g. from a CSV/Parquet file)
+ms.connection.sql("CREATE TABLE crosswalk AS SELECT * FROM read_csv('crosswalk.csv')")
+df = ms.query("""
+    SELECT c.*, tw.follower_count AS tw_followers, bs.follower_count AS bs_followers
+    FROM crosswalk c
+    JOIN twitter.accounts tw ON tw.account_id = c.twitter_id
+    JOIN bluesky.accounts bs ON bs.account_id = c.bluesky_id
+""")
+```
+
+`ms.connection` exposes the underlying DuckDB connection for anything not covered by `query()` -- reading Parquet/CSV files directly, `.pl()` for a polars DataFrame instead of pandas, or building intermediate tables like the crosswalk example above.
+
+## PostGIS `location` Columns
+
+`accounts.location`/`posts.location` are PostGIS `geometry` columns. DuckDB's Postgres scanner doesn't understand the PostGIS wire type, so a normal attached query returns opaque raw bytes:
+
+```python
+ms.query("SELECT location FROM twitter.accounts")
+# location column comes back as raw bytes, not usable coordinates
+```
+
+Use `raw()` to run PostGIS functions on the Postgres side, before the value ever crosses into DuckDB:
+
+```python
+df = ms.raw("twitter", "SELECT account_id, ST_AsText(location) AS location_wkt FROM accounts")
+```
+
+`raw()` runs against a single attached dataset's own Postgres connection (not spread across others), so it's the right tool specifically for this kind of Postgres-side-only operation -- for everything else, `query()` is what you want.
+
+## Detaching and Cleanup
+
+```python
+ms.detach("bluesky")   # drop one dataset, keep others attached
+ms.close()             # or use `with MultiStore() as ms:` to do this automatically
+```
+---
+description: Build entity co-occurrence, bipartite, and user-interaction graphs from your SMDT database. Export to NetworkX, pandas, or CSV.
+---
+
+# Network Construction
+
+SMDT provides powerful tools to construct various types of networks from your social media data. These functions generate networks over a specified period.
+
+Supported network types include:
+- **User Interaction**: Direct interactions between users (e.g., Retweets, Mentions).
+- **Entity Co-occurrence**: Entities (e.g., Hashtags) that appear together in the same post.
+- **Bipartite Networks**: Connections between two different node types (e.g., Accounts and Hashtags).
+
+## Prerequisites
+
+Ensure you have a database connection ready.
+
+```python
+from smdt.store.standard_db import StandardDB
+from smdt import networks
+from datetime import datetime
+import os
+
+# Connect to your database
+# initialize=False is recommended when just reading data
+db_name = os.getenv("DEFAULT_DB_NAME", "smdt_db")
+db = StandardDB(db_name, initialize=False)
+```
+
+## Entity Co-occurrence Networks
+
+This type of network connects entities that appear together in the same post. A common use case is a **Hashtag Co-occurrence Network**, where edges represent hashtags used in the same context.
+
+```python
+# Generate a Hashtag Co-occurrence Network
+# for a specific 24-hour window
+ht_net = networks.entity_cooccurrence(
+    db,
+    entity_type="HASHTAG",
+    start_time=datetime(2023, 5, 14),
+    end_time=datetime(2023, 5, 15),
+    min_weight=5,  # Only include edges with at least 5 co-occurrences
+)
+
+print(ht_net.meta)
+print(ht_net.edges)
+```
+
+### Parameters
+- `entity_type`: The type of entity to analyze (e.g., `'HASHTAG'`, `'USER_TAG'`, `'LINK'`).
+- `start_time` / `end_time`: Filter data to this time range.
+- `min_weight`: Filter out edges with fewer than N co-occurrences to reduce noise.
+
+## Bipartite Networks
+
+Bipartite networks connect two different types of nodes. For example, an **Account-Hashtag Network** connects users to the hashtags they have used.
+
+```python
+# Build account–hashtag bipartite network
+user_ht = networks.bipartite(
+    db,
+    left="account",
+    right="hashtag",
+    start_time=datetime(2023, 5, 14),
+    end_time=datetime(2023, 5, 15),
+    weighting="count",
+)
+
+print(user_ht.meta)
+print(user_ht.edges)
+```
+
+### Parameters
+- `left`: Must be `'account'` or `'post'`.
+- `right`: Any valid entity type (e.g., `'HASHTAG'`, `'LINK'`).
+- `weighting`: `'count'` (number of connections) or `'binary'` (1 if connected).
+
+## User Interaction Networks
+
+These networks represent direct social interactions. For example, a **Retweet Network** connects users who retweeted others.
+
+```python
+# Build a Retweet Network (Who retweeted whom?)
+rt_net = networks.user_interaction(
+    db,
+    interaction="QUOTE", # or "SHARE", "COMMENT", "ReTweet" depends on platform mapping
+    start_time=datetime(2023, 5, 14),
+    end_time=datetime(2023, 5, 15),
+    min_weight=2
+)
+
+print(f"Interaction edges: {len(rt_net.edges)}")
+```
+
+## Working with Results
+
+All network functions return a `NetworkResult` object containing pandas DataFrames.
+
+```python
+# The edges are a standard DataFrame
+df = ht_net.edges
+# Columns: ['source', 'target', 'weight', ...]
+
+# You can easily export to CSV
+df.to_csv("hashtag_network.csv", index=False)
+
+# Or convert to NetworkX for analysis
+import networkx as nx
+G = networks.to_networkx(ht_net)
+print(nx.info(G))
+```
+---
+description: Generate networks over sliding time windows to analyze how community structures evolve. Build weekly or daily interaction graphs with configurable weights and thresholds.
+---
+
+# Temporal Networks
+
+This recipe shows how to generate networks over sliding time windows, letting you analyze how community structures evolve day by day or week by week.
+
+## Quickstart
+
+```python
+from smdt.store.standard_db import StandardDB
+from smdt import networks
+from datetime import datetime, timedelta
+import pickle, os
+
+db = StandardDB("my_dataset", initialize=False)
+
+windows = networks.user_interaction_over_time(
+    db,
+    interaction="SHARE",
+    start_time=datetime(2024, 1, 1),
+    end_time=datetime(2024, 1, 14),
+    step=timedelta(days=7),
+    weighting="count",
+    min_weight=3,
+)
+
+os.makedirs("output", exist_ok=True)
+for result in windows:
+    ws = result["window_start"].strftime("%Y%m%d")
+    we = result["window_end"].strftime("%Y%m%d")
+    with open(f"output/network_{ws}_{we}.pkl", "wb") as f:
+        pickle.dump(result, f)
+    print(f"{ws}-{we}: {result['network'].meta.get('edge_count', 0)} edges")
+```
+
+## How It Works
+
+`user_interaction_over_time` queries the `actions` table and slices the results into time windows. For each window it builds a graph where nodes are accounts and weighted edges represent the number of interactions between them. The `min_weight` parameter filters out weak connections, reducing noise in the output.
+
+The function returns a generator so you can process one window at a time without holding all graphs in memory.
+
+## Parameters
+
+| Parameter | Description |
+|---|---|
+| `db` | A `StandardDB` instance connected to your database |
+| `interaction` | Action type to build edges from: `"SHARE"`, `"COMMENT"`, `"QUOTE"`, `"MENTION"` |
+| `start_time` / `end_time` | Overall time range to cover |
+| `step` | Width of each sliding window as a `timedelta` |
+| `weighting` | `"count"` (number of interactions) or `"binary"` (present/absent) |
+| `min_weight` | Drop edges with fewer than N interactions in a window |
+
+## Output Format
+
+Each yielded result is a dictionary:
+
+```python
+{
+    "window_start": datetime(...),
+    "window_end": datetime(...),
+    "network": <igraph.Graph>,  # the graph for this window
+}
+```
+
+The `igraph` graph object can be analyzed directly or converted to NetworkX:
+
+```python
+from smdt.networks.converters import to_networkx
+G_nx = to_networkx(result["network"])
+```
+
+## Prerequisites
+
+```bash
+uv pip install igraph tqdm
+```
+
+## Next Steps
+
+For single-snapshot network construction, see [Network Construction](./construction.md).
+# Installation
+
+This guide covers setting up the system requirements, database, and the Python environment for SMDT.
+
+::: tip Quick Summary
+SMDT requires **Python 3.11+**, **PostgreSQL 14.19+** (with TimescaleDB & PostGIS), and **uv**.
+:::
+
+## 1. Prerequisites & System Dependencies
+
+Before installing the Python package, you must set up the database backend.
+
+### Database Setup (PostgreSQL + Extensions)
+
+SMDT relies on a PostgreSQL database with **TimescaleDB** and **PostGIS** extensions enabled.
+
+::: details Click to expand OS-specific installation instructions (macOS, Linux, Windows)
+
+#### macOS (Homebrew)
+```bash
+# Install PostgreSQL 14
+brew install postgresql@14
+brew services start postgresql@14
+brew link --force postgresql@14
+
+# Install Extensions
+brew tap timescale/tap
+brew install timescaledb
+timescaledb-tune --quiet --yes
+
+brew install postgis
+
+# Restart Service
+brew services restart postgresql@14
+```
+
+#### Linux (Ubuntu/Debian)
+```bash
+# Add Postgres Repo
+sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+sudo apt update
+
+# Install Postgres 14
+sudo apt install postgresql-14
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Install TimescaleDB
+sudo add-apt-repository ppa:timescale/timescaledb-ppa
+sudo apt-get update
+sudo apt install timescaledb-2-postgresql-14
+sudo timescaledb-tune --quiet --yes
+
+# Install PostGIS
+sudo apt install postgresql-14-postgis-3
+sudo systemctl restart postgresql
+```
+
+#### Windows (Installer)
+
+Since PostgreSQL on Windows is typically installed via an installer rather than a package manager, follow these steps:
+
+1.  **Install PostgreSQL 14**:
+    *   Download the installer from [EnterpriseDB](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
+    *   Run the installer. Keep the default settings and remember your superuser password.
+    *   At the end, ensure **"Launch Stack Builder at exit"** is checked.
+
+2.  **Install PostGIS**:
+    *   In **Stack Builder**, select your PostgreSQL 14 installation.
+    *   Expand `Spatial Extensions` and check **PostGIS 3.x Bundle for PostgreSQL 14**.
+    *   Follow the prompts to install.
+
+3.  **Install TimescaleDB**:
+    *   Download the latest `.zip` release for Windows (e.g., `timescaledb-postgresql-14-windows-amd64.zip`) from [TimescaleDB Releases](https://github.com/timescale/timescaledb/releases).
+    *   Extract the zip archive.
+    *   Run `setup.exe` as Administrator.
+    *   Follow prompts to tune configuration.
+
+4.  **Restart Service**:
+    *   Open "Services" (Run `services.msc`).
+    *   Restart the `postgresql-x64-14` service.
+
+:::
+
+### Initialize the Database
+
+Once PostgreSQL is running, create the database and user, and enable the required extensions.
+
+1.  **Connect to Postgres**:
+    ```bash
+    psql -U postgres
+    ```
+
+    ::: tip
+    If the `psql` command is not recognized, ensure that the PostgreSQL `bin` directory is added to your system's `PATH`.
+    :::
+
+2.  **Run SQL Setup**:
+
+    ::: warning Replace placeholders
+    Replace `smdt_user` and `'your_secure_password'` with your own chosen username and a strong password before running.
+    :::
+
+    ```sql
+    -- 1. Create database and a dedicated superuser
+    CREATE DATABASE smdt_db;
+    CREATE USER smdt_user WITH SUPERUSER PASSWORD 'your_secure_password';
+    GRANT ALL PRIVILEGES ON DATABASE smdt_db TO smdt_user;
+
+    -- 2. Connect to the new database
+    \c smdt_db
+
+    -- 3. Enable Extensions (Order matters!)
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+    CREATE EXTENSION IF NOT EXISTS postgis;
+
+    -- 4. Verify installation
+    \dx
+    ```
+
+---
+
+## 2. Project Installation
+
+We use [uv](https://docs.astral.sh/uv/) for fast Python package management.
+
+1.  **Clone the Repository**
+    ```bash
+    git clone https://github.com/ViralLab/SMDT.git
+    cd SMDT
+    ```
+
+2.  **Initialize Environment**
+    Run `uv sync` to create the virtual environment and install dependencies defined in `pyproject.toml`.
+    
+    ```bash
+    uv sync
+    ```
+
+3.  **Activate the Environment**
+    
+    ```bash
+    source .venv/bin/activate
+    # On Windows: .venv\Scripts\activate
+    ```
+
+---
+
+## 3. Configuration
+
+SMDT reads configuration from environment variables.
+
+1.  **Create `.env` file** in the project root:
+    ```bash
+    touch .env
+    ```
+
+2.  **Add Database Credentials**:
+    
+    ```bash
+    # .env
+    DEFAULT_DB_NAME=smdt_db
+    DB_USER=smdt_user
+    DB_PASSWORD=secure_password
+    DB_HOST=localhost
+    DB_PORT=5432
+    ```
+
+## 4. Verify Installation
+
+To ensure everything is working, you can run a quick check:
+
+```bash
+uv run python -c 'import smdt; print("SMDT installed successfully!")'
+```
+
+You are now ready to start using SMDT! Check out the [Recipes](../recipes/) to get started.
+

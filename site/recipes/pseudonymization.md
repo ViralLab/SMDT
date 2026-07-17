@@ -1,3 +1,7 @@
+---
+description: Hash identifiers, redact free text, and handle GDPR erasure with SMDT's configurable pseudonymization pipeline. Three-layer privacy: column hashing, regex redaction, and optional Presidio PII detection.
+---
+
 # Pseudonymization
 
 SMDT provides a built-in `Pseudonymizer` to process a source database into a destination database, applying hashing to identifiers and redaction to free-text fields. The same real identifier always maps to the same pseudonym, so network graphs and cross-table joins survive the transformation intact.

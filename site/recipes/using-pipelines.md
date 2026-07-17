@@ -1,3 +1,7 @@
+---
+description: Understand SMDT's ingestion pipeline system: discovering files, batching database inserts, parallel workers, deduplication, and handling errors at scale.
+---
+
 # Using Ingestion Pipelines
 
 The SMDT ingestion pipeline is a robust system designed to process large volumes of data files efficiently. It handles:
@@ -85,7 +89,7 @@ config = PipelineConfig(
 )
 ```
 
-Each worker reads, standardizes, and flushes its own file independently, with its own database connection — this is where the speedup comes from if your standardizer's per-record work is CPU-bound. `num_workers=1` is unchanged from single-process behavior, so this is purely opt-in.
+Each worker reads, standardizes, and flushes its own file independently, with its own database connection. This is where the speedup comes from if your standardizer's per-record work is CPU-bound. `num_workers=1` is unchanged from single-process behavior, so this is purely opt-in.
 
 ::: warning Deduplication is scoped per file in parallel mode
 Deduplication only happens within a single flush's buffer. In single-process mode that buffer can span many files (up to `batch_size` records); in parallel mode each worker's buffer is scoped to just its own file. A duplicate record spanning two different files will produce two rows instead of one, unless the model's table has a database-level unique constraint for `on_conflict` to catch it (true for `Accounts`/`Communities`/the `*Enrichments` tables by default, not for `Posts`/`Entities`/`Actions`).
