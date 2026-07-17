@@ -37,6 +37,7 @@ QUERY_NAMES = [
     "Posts per day\n(chunk exclusion)",
     "Time-range count\n(chunk exclusion)",
     "Spatial nearby\n(GIST)",
+    "Hashtag-posts join\n(two-table)",
     "Conversation thread",
     "Account timeline",
     "Point lookup (post)",
@@ -45,8 +46,8 @@ QUERY_NAMES = [
     "Point lookup (account)",
     "Who shared account\n(space partition)",
 ]
-QUERY_P50 = [2623.2, 582.5, 273.3, 132.3, 70.6, 14.1, 13.5, 13.2, 5.3, 3.3, 3.1, 0.33]
-QUERY_P95 = [2674.4, 810.6, 458.7, 191.9, 93.5, 86.1, 80.9, 56.3, 41.5, 45.2, 11.8, 154.7]
+QUERY_P50 = [2623.2, 582.5, 273.3, 132.3, 70.6, 15.8, 14.1, 13.5, 13.2, 5.3, 3.3, 3.1, 0.33]
+QUERY_P95 = [2674.4, 810.6, 458.7, 191.9, 93.5, 279.8, 86.1, 80.9, 56.3, 41.5, 45.2, 11.8, 154.7]
 
 # Pseudonymization: rows/sec per table, single vs parallel
 PSEUDO_TABLES = ["entities\n(64.0M)", "actions\n(10.5M)", "accounts\n(815K)", "posts\n(10.7M)"]
@@ -82,7 +83,7 @@ GRAY = "#999999"
 # ---------------------------------------------------------------------------
 # Figure layout -- 3 panels side by side
 # ---------------------------------------------------------------------------
-fig, axes = plt.subplots(1, 3, figsize=(10, 3.6))
+fig, axes = plt.subplots(1, 3, figsize=(10, 4.0))
 (ax_a, ax_b, ax_c) = axes
 
 # ---- Panel A: Ingestion throughput ----
@@ -110,12 +111,11 @@ ax_a.text(-0.15, 1.04, "A", transform=ax_a.transAxes, fontsize=10, fontweight="b
 
 # ---- Panel B: Query latency ----
 y_pos = range(len(QUERY_NAMES))
-ax_b.barh(y_pos, QUERY_P50, color=COLOR_BAR, edgecolor="white", linewidth=0.3, label="p50")
-# p95 as an overlaid smaller bar or as error-like ticks
+ax_b.barh(y_pos, QUERY_P50, color=COLOR_BAR, edgecolor="white", linewidth=0.3)
+# p95 as overlaid tick marks, always drawn and brought to front
 for i in y_pos:
-    if QUERY_P95[i] > QUERY_P50[i] * 1.15:
-        ax_b.plot(QUERY_P95[i], i, marker="|", color=COLOR_P95, markersize=8,
-                  markeredgewidth=1.5, zorder=5)
+    ax_b.plot(QUERY_P95[i], i, marker="|", color=COLOR_P95, markersize=8,
+              markeredgewidth=1.5, zorder=10)
 
 ax_b.set_yticks(y_pos)
 ax_b.set_yticklabels(QUERY_NAMES, fontsize=6.5)
@@ -125,14 +125,16 @@ ax_b.set_xlim(0.15, 5000)
 ax_b.axvline(x=10, color=GRAY, linewidth=0.5, linestyle="--", alpha=0.5)
 ax_b.axvline(x=1000, color=GRAY, linewidth=0.5, linestyle="--", alpha=0.5)
 
-# Legend for p50/p95
+# Legend for p50/p95 + join
 from matplotlib.lines import Line2D
 legend_elements = [
     plt.Rectangle((0, 0), 1, 1, fc=COLOR_BAR, ec="white", linewidth=0.3, label="p50"),
     Line2D([0], [0], marker="|", color=COLOR_P95, markersize=8, markeredgewidth=1.5,
            linestyle="None", label="p95"),
 ]
-ax_b.legend(handles=legend_elements, frameon=False, loc="upper right", fontsize=6.5)
+ax_b.legend(handles=legend_elements, frameon=True, fancybox=False,
+           edgecolor="#AAAAAA", facecolor="white", framealpha=0.8,
+           loc="upper right", fontsize=6.5)
 ax_b.text(-0.15, 1.04, "B", transform=ax_b.transAxes, fontsize=10, fontweight="bold", va="bottom")
 
 # ---- Panel C: Pseudonymization speedup ----

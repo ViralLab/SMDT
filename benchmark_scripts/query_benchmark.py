@@ -191,6 +191,24 @@ QUERIES: List[Dict[str, Any]] = [
         "sql": "SELECT count(*) FROM posts WHERE body ILIKE %(pattern)s",
         "params_needed": ["text_pattern"],
     },
+    {
+        # A real two-table join, unlike enrichment_join below -- entities and
+        # posts are both always populated by ingestion (unlike enrichments),
+        # so this actually runs instead of being skipped against empty data.
+        "name": "hashtag_posts_join",
+        "category": "table_join",
+        "index_under_test": (
+            "entities_acct_type_time_idx (account_id, entity_type, created_at) "
+            "+ posts_post_id_idx (post_id)"
+        ),
+        "sql": (
+            "SELECT e.body AS hashtag, p.post_id, p.body AS post_body "
+            "FROM entities e JOIN posts p ON p.post_id = e.post_id "
+            "WHERE e.account_id = %(account_id)s AND e.entity_type = 'HASHTAG' "
+            "ORDER BY e.created_at DESC LIMIT 50"
+        ),
+        "params_needed": ["account_id"],
+    },
 ]
 
 # Data-dependent extras: only run if the target DB actually has this data.
